@@ -180,8 +180,22 @@
     (memory.copy (local.get $dst) (local.get $src) (local.get $size))
   )
 
-  (func $memchr (export "memchr") (param $s i32) (param $c i32) (param $n i32)
-    (unreachable)
+  ;; Searches the region of size n starting at s for the byte c
+  ;; Returns offset of match or NULL (0) if not found
+  (func $memchr (export "memchr") (param $s i32) (param $c i32) (param $n i32) (result i32)
+    (local $i i32)
+    (local.set $i (i32.const 0))
+
+    (if i32.lt_u (local.get $i) (local.get $n) (then
+      (loop
+        (if (i32.eq (i32.load8_u (i32.add (local.get $s) (local.get $i))) (local.get $c)) (then
+          (return (i32.add (local.get $s) (local.get $i)))
+        ))
+        (br_if 0 (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 1))) (local.get $n)))
+      )
+    ))
+
+    (i32.const 0)
   )
 
   (func $memset (export "memset") (param $s i32) (param $c i32) (param $n i32)
