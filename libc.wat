@@ -163,6 +163,48 @@
     (return (local.get $charCode))
   )
 
+  ;; Only handles decimal
+  ;; Modified to return base address and length as a tuple!
+  (func $itoa_s (param $x i32) (param $offset i32) (param $radix i32) (result i32 i32)
+    (local $low i32)
+    (local $high i32)
+    (local $temp i32)
+    (local $length i32)
+    (local.set $low (local.get $offset))
+    (if (i32.lt_s (local.get $x) (i32.const 0)) (then
+      ;; Append negative sign
+      (i32.store8 (local.get $low) (i32.const 45))
+      (local.set $low (i32.add (local.get $low) (i32.const 1)))
+      (local.set $x (i32.mul (local.get $x) (i32.const -1)))
+    ))
+  
+    (local.set $high (local.get $low))
+    (if (i32.gt_s (local.get $x) (i32.const 0)) (then
+      (loop
+        (i32.store8 (local.get $high) (i32.add (i32.const 48) (i32.rem_u (local.get $x) (local.get $radix))))
+        (local.set $high (i32.add (local.get $high) (i32.const 1)))
+        (br_if 0 (i32.gt_s (local.tee $x (i32.div_u (local.get $x) (local.get $radix))) (i32.const 0)))
+      )
+    ))
+  
+    (local.set $length (i32.sub (local.get $high) (local.get $offset)))
+    
+    (local.set $high (i32.sub (local.get $high) (i32.const 1)))
+    (if (i32.gt_u (local.get $high) (local.get $low)) (then
+      (loop
+        (local.set $temp (i32.load8_u (local.get $low)))
+        (i32.store8 (local.get $low) (i32.load8_u (local.get $high)))
+        (i32.store8 (local.get $high) (local.get $temp))
+        (br_if 0 (i32.gt_u 
+          (local.tee $high (i32.sub (local.get $high) (i32.const 1))) 
+          (local.tee $low (i32.add (local.get $low) (i32.const 1))) 
+        ))
+      )
+    ))
+
+    (local.get $offset) (local.get $length)
+  )
+
   ;; float.h - Skipped!
   ;; limits.h - Skipped!
   ;; locale.h - Skipped!
