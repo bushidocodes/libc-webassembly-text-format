@@ -1,13 +1,13 @@
 (module
 
   (global $errno (mut i32))
-  (global $EDOM (export "EDOM") i32 (i32.const 1))
-  (global $ERANGE (export "ERANGE") i32 (i32.const 2))
-  (global $NULL (export "NULL") i32 (i32.const 0))
+  (global $EDOM i32 (i32.const 1))
+  (global $ERANGE i32 (i32.const 2))
+  (global $NULL i32 (i32.const 0))
 
   ;; assert.h
   ;; Ignores NDEBUG
-  (func (export "assert") (i32 $condition)
+  (func $assert (i32 $condition)
     (if (i32.eqz (local.get $condition)) (then
       (unreachable)
     ))
@@ -15,113 +15,245 @@
 
   ;; ctype.h
   ;; Assumes ASCII locale
-  (func (export "isalnum") (param i32) (result i32))
-  (func (export "isalpha") (param i32) (result i32))
-  (func (export "iscntrl") (param i32) (result i32))
-  (func (export "isdigit") (param i32) (result i32))
-  (func (export "isgraph") (param i32) (result i32))
-  (func (export "islower") (param i32) (result i32))
-  (func (export "isprint") (param i32) (result i32))
-  (func (export "ispunct") (param i32) (result i32))
-  (func (export "isspace") (param i32) (result i32))
-  (func (export "isupper") (param i32) (result i32))
-  (func (export "isxdigit") (param i32) (result i32))
-  (func (export "isxdigit") (param i32) (result i32))
-  (func (export "tolower") (param i32) (result i32))
-  (func (export "toupper") (param i32) (result i32))
+  
+  ;; checks if charCode is a letter or digit [0-9a-zA-Z]
+  (func $isalnum (param $charCode i32) (result i32)
+    (i32.or 
+      (call $isdigit (local.get $charCode))
+      (call $isalpha (local.get $charCode))
+    )
+  )
+
+  ;; checks if charCode is a letter [a-zA-Z]
+  (func $isalpha (param $charCode i32) (result i32)
+    (i32.or
+      (call $islower (local.get $charCode))
+      (call $isupper (local.get $charCode))
+    )
+  )
+
+  ;; checks if charCode is a 7-bit unsigned char value that fits into the ASCII character set.
+  (func $isascii (param $charCode i32) (result i32)
+    (i32.and
+      (i32.ge_s (local.get $charCode) (i32.const  0))
+      (i32.le_s (local.get $charCode) (i32.const  127))
+    )
+  )
+
+  ;; checks if charCode is a space or tab
+  (func $isblank (param $charCode i32) (result i32)
+    (i32.or
+      (i32.eq (local.get $charCode) (i32.const  32))
+      (i32.eq (local.get $charCode) (i32.const  9))
+    )
+  )
+
+  ;; Checks if charCode is a non-printable control code
+  ;; This includes the C0 control set (0-31) and DEL (127)
+  (func $iscntrl (param $charCode i32) (result i32)
+    (i32.or
+      (i32.and
+        (i32.ge_s (local.get $charCode) (i32.const  0))
+        (i32.le_s (local.get $charCode) (i32.const 31))
+      )
+      (i32.eq (local.get $charCode) (i32.const 127))
+    )
+  )
+
+  ;; checks if charCode is a digit [0-9]
+  (func $isdigit (param $charCode i32) (result i32)
+    (i32.and
+      (i32.ge_s (local.get $charCode) (i32.const 48))
+      (i32.le_s (local.get $charCode) (i32.const 57))
+    )
+  )
+
+  ;; checks if charCode is a character that would be written to a graphical device
+  (func $isgraph (param $charCode i32) (result i32)
+    (i32.and 
+      (call $isascii (local.get $charCode))
+      (i32.and 
+        (i32.eqz (call $iscntrl (local.get $charCode)))
+        (i32.eqz (call $isspace (local.get $charCode)))
+      )
+    )
+  )
+
+  ;; checks if charCode is a lowercase letter [a-z]
+  (func $islower (param $charCode i32) (result i32)
+    (i32.and
+      (i32.ge_s (local.get $charCode) (i32.const  97))
+      (i32.le_s (local.get $charCode) (i32.const  122))
+    )
+  )
+
+  ;; checks for any printable character including space
+  (func $isprint (param $charCode i32) (result i32)
+    (i32.or 
+      (call $isgraph (local.get $charCode))
+      (i32.eq (local.get $charCode) (i32.const  32))
+    )
+  )
+
+  ;; checks for any printable character which is not a space or an alphanumeric character.
+  (func $ispunct (param $charCode i32) (result i32)
+    (i32.and
+      (call $isgraph (local.get $charCode))
+      (i32.eqz (call $isalnum (local.get $charCode)))
+    )
+  )
+
+  ;; checks if charCode is a space or one of the standard motion control characters.
+  (func $isspace (param $charCode i32) (result i32)
+    (if (i32.eq (local.get $charCode) (i32.const  9)) (then (return (i32.const 1)))) ;; horizontal tab
+    (if (i32.eq (local.get $charCode) (i32.const 10)) (then (return (i32.const 1)))) ;; line feed
+    (if (i32.eq (local.get $charCode) (i32.const 11)) (then (return (i32.const 1)))) ;; vertical tab
+    (if (i32.eq (local.get $charCode) (i32.const 12)) (then (return (i32.const 1)))) ;; form feed
+    (if (i32.eq (local.get $charCode) (i32.const 13)) (then (return (i32.const 1)))) ;; carraige return
+    (if (i32.eq (local.get $charCode) (i32.const 32)) (then (return (i32.const 1)))) ;; space
+
+    (i32.const 0)
+  )
+
+  ;; checks if charCode is an uppercase letter [A-Z]
+  (func $isupper (param $charCode i32) (result i32)
+    (i32.and
+      (i32.ge_s (local.get $charCode) (i32.const 65))
+      (i32.le_s (local.get $charCode) (i32.const 90))
+    )
+  )
+
+  ;; checks if charCode is a hexadecimal digit [0-9a-fA-F]
+  (func $isxdigit (param $charCode i32) (result i32)
+    (i32.or 
+      (call $isdigit (local.get $charCode))
+      (i32.or 
+        (i32.and
+          (i32.ge_s (local.get $charCode) (i32.const 65))
+          (i32.le_s (local.get $charCode) (i32.const 70))
+        )
+        (i32.and
+          (i32.ge_s (local.get $charCode) (i32.const 97))
+          (i32.le_s (local.get $charCode) (i32.const 102))
+        )
+      )
+    )
+  )
+
+  ;; TODO
+  (func $toascii (param $charCode i32) (result i32)
+    (unreachable)
+  )
+
+  (func $toupper (param $charCode i32) (result i32)
+    (if (call $islower (local.get $charCode)) (then
+      ;; Distance between A and a is 32
+      (return (i32.sub (local.get $charCode) (i32.const 32)))
+    ))
+
+    (return (local.get $charCode))
+  )
+
+  (func $tolower (param $charCode i32) (result i32)
+    (if (call $isupper (local.get $charCode)) (then
+      ;; Distance between A and a is 32
+      (return (i32.add (local.get $charCode) (i32.const 32)))
+    ))
+
+    (return (local.get $charCode))
+  )
 
   ;; float.h - Skipped!
-
   ;; limits.h - Skipped!
   ;; locale.h - Skipped!
 
   ;; math.h
-  (func (export "acos") (param f64) (result f64)
+  (func $acos (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "asin") (param f64) (result f64)
+  (func $asin (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "atan") (param f64) (result f64)
+  (func $atan (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "atan2") (param f64) (param f64) (result f64)
+  (func $atan2 (param $x f64) (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "cos") (param f64) (result f64)
+  (func $cos (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "sin") (param f64) (result f64)
+  (func $sin (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "tan") (param f64) (result f64)
+  (func $tan (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "cosh") (param f64) (result f64)
+  (func $cosh (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "sinh") (param f64) (result f64)
+  (func $sinh (param $x f64) (result f64)
     (unreachable)
   )
 
-  (func (export "tanh") (param f64) (result f64)
+  (func $tanh (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "exp") (param f64) (result f64)
+  (func $exp (param $x f64) (result f64)
     (unreachable)
   )
   
   ;; Uses multiple return in place of return pointer
-  (func (export "frexp") (param f64) (result i32 f64)
+  (func $frexp (param $x f64) (result i32 f64)
     (unreachable)
   )
 
-  (func (export "ldexp") (param $x f64) (param $exp i32) (result f64)
+  (func $ldexp (param $x f64) (param $exp i32) (result f64)
     (unreachable)
   )
 
-  (func (export "log") (param $x f64) (result f64)
+  (func $log (param $x f64) (result f64)
     (unreachable)
   )
 
-  (func (export "log10") (param $x f64) (result f64)
+  (func $log10 (param $x f64) (result f64)
     (unreachable)
   )
   
-  (func (export "modf") (param $value f64) (result f64 f64)
+  (func $modf (param $value f64) (result f64 f64)
     (unreachable)
   )
   
-  (func (export "pow") (param $x f64) (param $y f64) (result f64)
+  (func $pow (param $x f64) (param $y f64) (result f64)
     (unreachable)
   )
 
-  (func (export "sqrt") (param $x f64) (result f64)
+  (func $sqrt (param $x f64) (result f64)
     (f64.sqrt (local.get $x))
   )
 
-  (func (export "ceil") (param $x f64) (result f64)
+  (func $ceil (param $x f64) (result f64)
     (f64.ceil (local.get $x))
   )
 
-  (func (export "fabs") (param $x f64) (result f64)
+  (func $fabs (param $x f64) (result f64)
     (f64.abs (local.get $x))
   )
 
-  (func (export "floor") (param $x f64) (result f64)
+  (func $floor (param $x f64) (result f64)
     (f64.floor (local.get $x))
   )
 
-  (func (export "fmod") (param $x f64) (param $y f64) (result f64)
+  (func $fmod (param $x f64) (param $y f64) (result f64)
     (unreachable)
   )
 
@@ -131,7 +263,7 @@
   ;; stddef.h - Skipped!
   ;; stdio.h - Skipped!
 
-  (func (export "abs") (param $i i32) (result i32)
+  (func $abs (param $i i32) (result i32)
     (if (i32.lt_s (local.get $i) (i32.const 0)) (then
       (i32.mul (local.get $1) (i32.const -1))
     ) (else 
@@ -139,7 +271,7 @@
     ))
   )
   
-  (func (export "labs") (param $i i64) (result i64)
+  (func $labs (param $i i64) (result i64)
     (if (i64.lt_s (local.get $i) (i64.const 0)) (then
       (i64.mul (local.get $1) (i64.const -1))
     ) (else 
@@ -149,40 +281,39 @@
     
   ;; Compute quotient and remainder of integer division. 
   ;; Returns 2-tuple in place of dib_t struct
-  (func (export "div") (param $numerator i32) (param $denominator i32) (result i32 i32)
+  (func $div (param $numerator i32) (param $denominator i32) (result i32 i32)
     (i32.div_s (local.get $numerator) (local.get $denominator))
     (i32.rem_s (local.get $numerator) (local.get $denominator))
   )
 
-  (func (export "ldiv") (param $numerator i64) (param $denominator i64) (result i64 i64)
+  (func $ldiv (param $numerator i64) (param $denominator i64) (result i64 i64)
     (i64.div_s (local.get $numerator) (local.get $denominator))
     (i64.rem_s (local.get $numerator) (local.get $denominator))
   )
 
-  (func (export "bsearch"))
-  (func (export "qsort"))
-
-  (func (export "rand"))
-  (func (export "srand"))
-  (func (export "atof"))
-  (func (export "atoi"))
-  (func (export "strtod"))
-  (func (export "strtol"))
+  (func $bsearch)
+  (func $qsort)
+  (func $rand)
+  (func $srand)
+  (func $atof)
+  (func $atoi)
+  (func $strtod)
+  (func $strtol)
 
   ;; Copies a range of bytes from src to dst
   ;; memory.copy is able to handle overlapping regions in linear memory, so there is no distinction
   ;; between memmove and memcpy
-  (func $memcpy (export "memcpy") (param $dst i32) (param $src i32) (param $size i32) (result i32)
+  (func $memcpy (param $dst i32) (param $src i32) (param $size i32) (result i32)
     (call $memmove (local.get $dst) (local.get $src) (local.get $size))
   )
 
-  (func $memmove (export "memmove") (param $dst i32) (param $src i32) (param $size i32) (result i32)
+  (func $memmove (param $dst i32) (param $src i32) (param $size i32) (result i32)
     (memory.copy (local.get $dst) (local.get $src) (local.get $size))
   )
 
   ;; Searches the region of size n starting at s for the byte c
   ;; Returns offset of match or NULL (0) if not found
-  (func $memchr (export "memchr") (param $s i32) (param $c i32) (param $n i32) (result i32)
+  (func $memchr (param $s i32) (param $c i32) (param $n i32) (result i32)
     (local $i i32)
     (local.set $i (i32.const 0))
 
@@ -198,13 +329,13 @@
     (i32.const 0)
   )
 
-  (func $memset (export "memset") (param $s i32) (param $c i32) (param $n i32)
+  (func $memset (param $s i32) (param $c i32) (param $n i32)
     (memory.fill (local.get $s) (local.get $c) (local.get $n))
   )
 
   ;; Compares the two regions starting at offsets s1 and s2 of identical size n match byte-for-byte
   ;; Returns -1 if range s1 is less than s2, 0 if range s1 matchs s2, 1 if range s1 is greater than s2
-  (func (export "memcmp") (param $s1 i32) (param $s2 i32) (param $n i32) (result i32) 
+  (func $memcmp (param $s1 i32) (param $s2 i32) (param $n i32) (result i32) 
     (local $s1Cursor i32)
     (local $s2Cursor i32)
     (local.set $s1Cursor (local.get $s1))
@@ -226,24 +357,23 @@
     (i32.const 0)
   )
 
-
-  (func (export "strcpy"))
-  (func (export "strncpy"))
-  (func (export "strcat"))
-  (func (export "strncat"))
-  (func (export "strlen"))
-  (func (export "strcmp"))
-  (func (export "strcoll"))
-  (func (export "strncmp"))
-  (func (export "strxfrm"))
-  (func (export "strchr"))
-  (func (export "strcspn"))
-  (func (export "strpbrk"))
-  (func (export "strrchr"))
-  (func (export "strrchr"))
-  (func (export "strspn"))
-  (func (export "strstr"))
-  (func (export "strtrok"))
-  (func (export "strerror"))
-
+  (func $strcpy)
+  (func $strncpy)
+  (func $strncpy)
+  (func $strcat)
+  (func $strncat)
+  (func $strlen)
+  (func $strcmp)
+  (func $strcoll)
+  (func $strncmp)
+  (func $strxfrm)
+  (func $strchr)
+  (func $strcspn)
+  (func $strpbrk)
+  (func $strrchr)
+  (func $strrchr)
+  (func $strspn)
+  (func $strstr)
+  (func $strtok)
+  (func $strerror)
 )
