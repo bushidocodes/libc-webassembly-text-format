@@ -1,1 +1,161 @@
 # libc.wat
+
+A WebAssembly Text Format (WAT) implementation of portions of the C Standard Library.
+
+## Overview
+
+`libc.wat` provides C standard library functions implemented directly in WebAssembly Text Format. It targets pure WebAssembly environments where you want familiar libc semantics without external dependencies, and takes advantage of WebAssembly-specific features like multi-value returns and native memory/math instructions.
+
+## Implementation Status
+
+### assert.h
+
+| Function | Status |
+|----------|--------|
+| `assert` | Implemented (ignores `NDEBUG`) |
+
+### ctype.h
+
+All functions assume ASCII locale.
+
+| Function | Status |
+|----------|--------|
+| `isalnum` | Implemented |
+| `isalpha` | Implemented |
+| `isascii` | Implemented |
+| `isblank` | Implemented |
+| `iscntrl` | Implemented |
+| `isdigit` | Implemented |
+| `isgraph` | Implemented |
+| `islower` | Implemented |
+| `isprint` | Implemented |
+| `ispunct` | Implemented |
+| `isspace` | Implemented |
+| `isupper` | Implemented |
+| `isxdigit` | Implemented |
+| `tolower` | Implemented |
+| `toupper` | Implemented |
+| `toascii` | Stub |
+
+### math.h
+
+| Function | Status |
+|----------|--------|
+| `ceil` | Implemented (native `f64.ceil`) |
+| `fabs` | Implemented (native `f64.abs`) |
+| `floor` | Implemented (native `f64.floor`) |
+| `sqrt` | Implemented (native `f64.sqrt`) |
+| `acos` | Stub |
+| `asin` | Stub |
+| `atan` | Stub |
+| `atan2` | Stub |
+| `cos` | Stub |
+| `cosh` | Stub |
+| `exp` | Stub |
+| `fmod` | Stub |
+| `frexp` | Stub |
+| `ldexp` | Stub |
+| `log` | Stub |
+| `log10` | Stub |
+| `modf` | Stub |
+| `pow` | Stub |
+| `sin` | Stub |
+| `sinh` | Stub |
+| `tan` | Stub |
+| `tanh` | Stub |
+
+### stdlib.h
+
+| Function | Status | Notes |
+|----------|--------|-------|
+| `abs` | Implemented | |
+| `div` | Implemented | Returns `(quotient, remainder)` tuple |
+| `labs` | Implemented | |
+| `ldiv` | Implemented | Returns `(quotient, remainder)` tuple |
+| `itoa_s` | Implemented | Decimal only; returns `(base_address, length)` tuple |
+| `atof` | Stub | |
+| `atoi` | Stub | |
+| `bsearch` | Stub | |
+| `qsort` | Stub | |
+| `rand` | Stub | |
+| `srand` | Stub | |
+| `strtod` | Stub | |
+| `strtol` | Stub | |
+
+### string.h
+
+| Function | Status |
+|----------|--------|
+| `memchr` | Implemented |
+| `memcmp` | Implemented |
+| `memcpy` | Implemented (delegates to `memmove`) |
+| `memmove` | Implemented (native `memory.copy`) |
+| `memset` | Implemented (native `memory.fill`) |
+| `strcat` | Stub |
+| `strchr` | Stub |
+| `strcmp` | Stub |
+| `strcoll` | Stub |
+| `strcpy` | Stub |
+| `strcspn` | Stub |
+| `strerror` | Stub |
+| `strlen` | Stub |
+| `strncat` | Stub |
+| `strncmp` | Stub |
+| `strncpy` | Stub |
+| `strpbrk` | Stub |
+| `strrchr` | Stub |
+| `strspn` | Stub |
+| `strstr` | Stub |
+| `strtok` | Stub |
+| `strxfrm` | Stub |
+
+### Skipped Headers
+
+The following headers are intentionally not implemented:
+
+- `float.h` — compiler-specific constants
+- `limits.h` — compiler-specific constants
+- `locale.h` — not meaningful in WASM
+- `setjmp.h` — not expressible in WASM
+- `signal.h` — not expressible in WASM
+- `stdarg.h` — not expressible in WASM
+- `stddef.h` — compiler-specific types
+- `stdio.h` — I/O handled by the host
+
+## Design Notes
+
+### Multi-value returns
+
+Where C uses output pointer parameters or structs, this library uses WebAssembly multi-value returns instead. This is a cleaner fit for the WASM execution model and avoids pointer aliasing concerns.
+
+| C signature | WAT signature |
+|-------------|---------------|
+| `div_t div(int, int)` | `(func $div ...) (result i32 i32)` |
+| `ldiv_t ldiv(long, long)` | `(func $ldiv ...) (result i64 i64)` |
+| `double *frexp(double, int*)` | `(func $frexp ...) (result i32 f64)` |
+| `double modf(double, double*)` | `(func $modf ...) (result f64 f64)` |
+
+`itoa_s` is an extension that returns `(base_address, length)` rather than following the original `itoa` signature, avoiding a null-terminated-string convention.
+
+### Global state
+
+`$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2).
+
+### Memory operations
+
+`memcpy` delegates to `memmove` because the WebAssembly `memory.copy` instruction handles overlapping regions correctly, so there is no behavioral difference between the two. `memset` uses `memory.fill` directly.
+
+## Usage
+
+Compile the WAT source to a WASM binary with any standard WAT toolchain:
+
+```sh
+# Using wasm-tools
+wasm-tools parse libc.wat -o libc.wasm
+
+# Using wat2wasm (part of the WebAssembly Binary Toolkit)
+wat2wasm libc.wat -o libc.wasm
+```
+
+Then import the functions you need into your module or host runtime.
+

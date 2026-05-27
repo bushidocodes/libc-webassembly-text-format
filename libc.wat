@@ -307,17 +307,17 @@
 
   (func $abs (param $i i32) (result i32)
     (if (i32.lt_s (local.get $i) (i32.const 0)) (then
-      (i32.mul (local.get $1) (i32.const -1))
-    ) (else 
-      (local.get $1)
+      (i32.mul (local.get $i) (i32.const -1))
+    ) (else
+      (local.get $i)
     ))
   )
-  
+
   (func $labs (param $i i64) (result i64)
     (if (i64.lt_s (local.get $i) (i64.const 0)) (then
-      (i64.mul (local.get $1) (i64.const -1))
-    ) (else 
-      (local.get $1)
+      (i64.mul (local.get $i) (i64.const -1))
+    ) (else
+      (local.get $i)
     ))
   )
     
