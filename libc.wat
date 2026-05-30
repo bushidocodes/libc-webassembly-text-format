@@ -396,7 +396,7 @@
         ))
         (local.set $s1Cursor (i32.add (local.get $s1Cursor) (i32.const 1)))
         (local.set $s2Cursor (i32.add (local.get $s2Cursor) (i32.const 1)))
-        (br_if 0 (i32.gt_s (local.tee $n (i32.sub (local.get $n (i32.const 1)))) (i32.const 0)))
+        (br_if 0 (i32.gt_s (local.tee $n (i32.sub (local.get $n) (i32.const 1))) (i32.const 0)))
       )  
     ))
     (i32.const 0)
