@@ -1,13 +1,15 @@
 (module
 
-  (global $errno (mut i32))
+  (memory 1)
+
+  (global $errno (mut i32) (i32.const 0))
   (global $EDOM i32 (i32.const 1))
   (global $ERANGE i32 (i32.const 2))
   (global $NULL i32 (i32.const 0))
 
   ;; assert.h
   ;; Ignores NDEBUG
-  (func $assert (i32 $condition)
+  (func $assert (param $condition i32)
     (if (i32.eqz (local.get $condition)) (then
       (unreachable)
     ))
@@ -222,7 +224,7 @@
     (unreachable)
   )
   
-  (func $atan2 (param $x f64) (param $x f64) (result f64)
+  (func $atan2 (param $y f64) (param $x f64) (result f64)
     (unreachable)
   )
   
@@ -306,7 +308,7 @@
   ;; stdio.h - Skipped!
 
   (func $abs (param $i i32) (result i32)
-    (if (i32.lt_s (local.get $i) (i32.const 0)) (then
+    (if (result i32) (i32.lt_s (local.get $i) (i32.const 0)) (then
       (i32.mul (local.get $i) (i32.const -1))
     ) (else
       (local.get $i)
@@ -314,7 +316,7 @@
   )
 
   (func $labs (param $i i64) (result i64)
-    (if (i64.lt_s (local.get $i) (i64.const 0)) (then
+    (if (result i64) (i64.lt_s (local.get $i) (i64.const 0)) (then
       (i64.mul (local.get $i) (i64.const -1))
     ) (else
       (local.get $i)
@@ -351,6 +353,7 @@
 
   (func $memmove (param $dst i32) (param $src i32) (param $size i32) (result i32)
     (memory.copy (local.get $dst) (local.get $src) (local.get $size))
+    (local.get $dst)
   )
 
   ;; Searches the region of size n starting at s for the byte c
@@ -359,7 +362,7 @@
     (local $i i32)
     (local.set $i (i32.const 0))
 
-    (if i32.lt_u (local.get $i) (local.get $n) (then
+    (if (i32.lt_u (local.get $i) (local.get $n)) (then
       (loop
         (if (i32.eq (i32.load8_u (i32.add (local.get $s) (local.get $i))) (local.get $c)) (then
           (return (i32.add (local.get $s) (local.get $i)))
@@ -401,7 +404,6 @@
 
   (func $strcpy)
   (func $strncpy)
-  (func $strncpy)
   (func $strcat)
   (func $strncat)
   (func $strlen)
@@ -412,7 +414,6 @@
   (func $strchr)
   (func $strcspn)
   (func $strpbrk)
-  (func $strrchr)
   (func $strrchr)
   (func $strspn)
   (func $strstr)
