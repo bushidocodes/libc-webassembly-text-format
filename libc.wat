@@ -374,8 +374,9 @@
     (i32.const 0)
   )
 
-  (func $memset (param $s i32) (param $c i32) (param $n i32)
+  (func $memset (param $s i32) (param $c i32) (param $n i32) (result i32)
     (memory.fill (local.get $s) (local.get $c) (local.get $n))
+    (local.get $s)
   )
 
   ;; Compares the two regions starting at offsets s1 and s2 of identical size n match byte-for-byte
