@@ -307,17 +307,19 @@
   ;; stddef.h - Skipped!
   ;; stdio.h - Skipped!
 
+  ;; Note: result is undefined for i32.const 0x80000000 (INT_MIN), matching C UB
   (func $abs (param $i i32) (result i32)
     (if (result i32) (i32.lt_s (local.get $i) (i32.const 0)) (then
-      (i32.mul (local.get $i) (i32.const -1))
+      (i32.sub (i32.const 0) (local.get $i))
     ) (else
       (local.get $i)
     ))
   )
 
+  ;; Note: result is undefined for i64.const 0x8000000000000000 (LLONG_MIN), matching C UB
   (func $labs (param $i i64) (result i64)
     (if (result i64) (i64.lt_s (local.get $i) (i64.const 0)) (then
-      (i64.mul (local.get $i) (i64.const -1))
+      (i64.sub (i64.const 0) (local.get $i))
     ) (else
       (local.get $i)
     ))
