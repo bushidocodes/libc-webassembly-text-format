@@ -181,13 +181,11 @@
     ))
   
     (local.set $high (local.get $low))
-    (if (i32.gt_s (local.get $x) (i32.const 0)) (then
-      (loop
-        (i32.store8 (local.get $high) (i32.add (i32.const 48) (i32.rem_u (local.get $x) (local.get $radix))))
-        (local.set $high (i32.add (local.get $high) (i32.const 1)))
-        (br_if 0 (i32.gt_s (local.tee $x (i32.div_u (local.get $x) (local.get $radix))) (i32.const 0)))
-      )
-    ))
+    (loop
+      (i32.store8 (local.get $high) (i32.add (i32.const 48) (i32.rem_u (local.get $x) (local.get $radix))))
+      (local.set $high (i32.add (local.get $high) (i32.const 1)))
+      (br_if 0 (i32.gt_s (local.tee $x (i32.div_u (local.get $x) (local.get $radix))) (i32.const 0)))
+    )
   
     (local.set $length (i32.sub (local.get $high) (local.get $offset)))
     
