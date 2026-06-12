@@ -181,13 +181,11 @@
     ))
   
     (local.set $high (local.get $low))
-    (if (i32.gt_u (local.get $x) (i32.const 0)) (then
-      (loop
-        (i32.store8 (local.get $high) (i32.add (i32.const 48) (i32.rem_u (local.get $x) (local.get $radix))))
-        (local.set $high (i32.add (local.get $high) (i32.const 1)))
-        (br_if 0 (i32.gt_u (local.tee $x (i32.div_u (local.get $x) (local.get $radix))) (i32.const 0)))
-      )
-    ))
+    (loop
+      (i32.store8 (local.get $high) (i32.add (i32.const 48) (i32.rem_u (local.get $x) (local.get $radix))))
+      (local.set $high (i32.add (local.get $high) (i32.const 1)))
+      (br_if 0 (i32.gt_u (local.tee $x (i32.div_u (local.get $x) (local.get $radix))) (i32.const 0)))
+    )
   
     (local.set $length (i32.sub (local.get $high) (local.get $offset)))
     
@@ -307,17 +305,19 @@
   ;; stddef.h - Skipped!
   ;; stdio.h - Skipped!
 
+  ;; Note: result is undefined for i32.const 0x80000000 (INT_MIN), matching C UB
   (func $abs (param $i i32) (result i32)
     (if (result i32) (i32.lt_s (local.get $i) (i32.const 0)) (then
-      (i32.mul (local.get $i) (i32.const -1))
+      (i32.sub (i32.const 0) (local.get $i))
     ) (else
       (local.get $i)
     ))
   )
 
+  ;; Note: result is undefined for i64.const 0x8000000000000000 (LLONG_MIN), matching C UB
   (func $labs (param $i i64) (result i64)
     (if (result i64) (i64.lt_s (local.get $i) (i64.const 0)) (then
-      (i64.mul (local.get $i) (i64.const -1))
+      (i64.sub (i64.const 0) (local.get $i))
     ) (else
       (local.get $i)
     ))
@@ -374,8 +374,9 @@
     (i32.const 0)
   )
 
-  (func $memset (param $s i32) (param $c i32) (param $n i32)
+  (func $memset (param $s i32) (param $c i32) (param $n i32) (result i32)
     (memory.fill (local.get $s) (local.get $c) (local.get $n))
+    (local.get $s)
   )
 
   ;; Compares the two regions starting at offsets s1 and s2 of identical size n match byte-for-byte
