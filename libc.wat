@@ -335,14 +335,55 @@
     (i64.rem_s (local.get $numerator) (local.get $denominator))
   )
 
-  (func $bsearch)
-  (func $qsort)
-  (func $rand)
-  (func $srand)
-  (func $atof)
-  (func $atoi)
-  (func $strtod)
-  (func $strtol)
+  ;; Stubs retain their correct C-compatible signatures so they can be imported
+  ;; with the right type today; the (unreachable) body traps until implemented.
+  ;; Following this library's conventions: C `long` maps to i64 (as in $labs /
+  ;; $ldiv) and pointer out-params map to multi-value returns (as in $div /
+  ;; $frexp), so e.g. strtol's `char **endptr` is returned as a second result.
+
+  ;; void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+  ;;               int (*compar)(const void *, const void *))
+  (func $bsearch (param $key i32) (param $base i32) (param $nmemb i32) (param $size i32) (param $compar i32) (result i32)
+    (unreachable)
+  )
+
+  ;; void qsort(void *base, size_t nmemb, size_t size,
+  ;;            int (*compar)(const void *, const void *))
+  (func $qsort (param $base i32) (param $nmemb i32) (param $size i32) (param $compar i32)
+    (unreachable)
+  )
+
+  ;; int rand(void)
+  (func $rand (result i32)
+    (unreachable)
+  )
+
+  ;; void srand(unsigned int seed)
+  (func $srand (param $seed i32)
+    (unreachable)
+  )
+
+  ;; double atof(const char *nptr)
+  (func $atof (param $nptr i32) (result f64)
+    (unreachable)
+  )
+
+  ;; int atoi(const char *nptr)
+  (func $atoi (param $nptr i32) (result i32)
+    (unreachable)
+  )
+
+  ;; double strtod(const char *nptr, char **endptr)
+  ;; Returns (value, endptr) in place of the char** out-param.
+  (func $strtod (param $nptr i32) (result f64 i32)
+    (unreachable)
+  )
+
+  ;; long strtol(const char *nptr, char **endptr, int base)
+  ;; Returns (value, endptr) in place of the char** out-param.
+  (func $strtol (param $nptr i32) (param $base i32) (result i64 i32)
+    (unreachable)
+  )
 
   ;; Copies a range of bytes from src to dst
   ;; memory.copy is able to handle overlapping regions in linear memory, so there is no distinction
@@ -403,23 +444,90 @@
     (i32.const 0)
   )
 
-  (func $strcpy)
-  (func $strncpy)
-  (func $strcat)
-  (func $strncat)
-  (func $strlen)
-  (func $strcmp)
-  (func $strcoll)
-  (func $strncmp)
-  (func $strxfrm)
-  (func $strchr)
-  (func $strcspn)
-  (func $strpbrk)
-  (func $strrchr)
-  (func $strspn)
-  (func $strstr)
-  (func $strtok)
-  (func $strerror)
+  ;; char *strcpy(char *dst, const char *src)
+  (func $strcpy (param $dst i32) (param $src i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strncpy(char *dst, const char *src, size_t n)
+  (func $strncpy (param $dst i32) (param $src i32) (param $n i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strcat(char *dst, const char *src)
+  (func $strcat (param $dst i32) (param $src i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strncat(char *dst, const char *src, size_t n)
+  (func $strncat (param $dst i32) (param $src i32) (param $n i32) (result i32)
+    (unreachable)
+  )
+
+  ;; size_t strlen(const char *s)
+  (func $strlen (param $s i32) (result i32)
+    (unreachable)
+  )
+
+  ;; int strcmp(const char *s1, const char *s2)
+  (func $strcmp (param $s1 i32) (param $s2 i32) (result i32)
+    (unreachable)
+  )
+
+  ;; int strcoll(const char *s1, const char *s2)
+  (func $strcoll (param $s1 i32) (param $s2 i32) (result i32)
+    (unreachable)
+  )
+
+  ;; int strncmp(const char *s1, const char *s2, size_t n)
+  (func $strncmp (param $s1 i32) (param $s2 i32) (param $n i32) (result i32)
+    (unreachable)
+  )
+
+  ;; size_t strxfrm(char *dst, const char *src, size_t n)
+  (func $strxfrm (param $dst i32) (param $src i32) (param $n i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strchr(const char *s, int c)
+  (func $strchr (param $s i32) (param $c i32) (result i32)
+    (unreachable)
+  )
+
+  ;; size_t strcspn(const char *s, const char *reject)
+  (func $strcspn (param $s i32) (param $reject i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strpbrk(const char *s, const char *accept)
+  (func $strpbrk (param $s i32) (param $accept i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strrchr(const char *s, int c)
+  (func $strrchr (param $s i32) (param $c i32) (result i32)
+    (unreachable)
+  )
+
+  ;; size_t strspn(const char *s, const char *accept)
+  (func $strspn (param $s i32) (param $accept i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strstr(const char *haystack, const char *needle)
+  (func $strstr (param $haystack i32) (param $needle i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strtok(char *str, const char *delim)
+  (func $strtok (param $str i32) (param $delim i32) (result i32)
+    (unreachable)
+  )
+
+  ;; char *strerror(int errnum)
+  (func $strerror (param $errnum i32) (result i32)
+    (unreachable)
+  )
 
   ;; Exports
   ;; The linear memory and every implemented function are exported so the
@@ -458,6 +566,15 @@
   (export "labs" (func $labs))
   (export "div" (func $div))
   (export "ldiv" (func $ldiv))
+  ;; Stubs (correct signature, traps until implemented)
+  (export "bsearch" (func $bsearch))
+  (export "qsort" (func $qsort))
+  (export "rand" (func $rand))
+  (export "srand" (func $srand))
+  (export "atof" (func $atof))
+  (export "atoi" (func $atoi))
+  (export "strtod" (func $strtod))
+  (export "strtol" (func $strtol))
 
   ;; string.h
   (export "memcpy" (func $memcpy))
@@ -465,4 +582,22 @@
   (export "memchr" (func $memchr))
   (export "memset" (func $memset))
   (export "memcmp" (func $memcmp))
+  ;; Stubs (correct signature, traps until implemented)
+  (export "strcpy" (func $strcpy))
+  (export "strncpy" (func $strncpy))
+  (export "strcat" (func $strcat))
+  (export "strncat" (func $strncat))
+  (export "strlen" (func $strlen))
+  (export "strcmp" (func $strcmp))
+  (export "strcoll" (func $strcoll))
+  (export "strncmp" (func $strncmp))
+  (export "strxfrm" (func $strxfrm))
+  (export "strchr" (func $strchr))
+  (export "strcspn" (func $strcspn))
+  (export "strpbrk" (func $strpbrk))
+  (export "strrchr" (func $strrchr))
+  (export "strspn" (func $strspn))
+  (export "strstr" (func $strstr))
+  (export "strtok" (func $strtok))
+  (export "strerror" (func $strerror))
 )
