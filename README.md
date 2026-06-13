@@ -52,13 +52,13 @@ All functions assume ASCII locale.
 | `exp` | Implemented (Cephes rational approx; ~1 ULP) |
 | `log` | Implemented (Cephes rational approx; ~1 ULP) |
 | `log10` | Implemented (`log(x) * log10(e)`; a few ULP) |
+| `pow` | Implemented (exact-ish for integer exponents; `exp(y·log x)` otherwise) |
 | `acos` | Stub |
 | `asin` | Stub |
 | `atan` | Stub |
 | `atan2` | Stub |
 | `cos` | Stub |
 | `cosh` | Stub |
-| `pow` | Stub |
 | `sin` | Stub |
 | `sinh` | Stub |
 | `tan` | Stub |
