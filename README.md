@@ -145,6 +145,16 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 
 `memcpy` delegates to `memmove` because the WebAssembly `memory.copy` instruction handles overlapping regions correctly, so there is no behavioral difference between the two. `memset` uses `memory.fill` directly.
 
+### Stubs
+
+Every function marked "Stub" above is declared with its correct C-compatible
+WAT signature and an `(unreachable)` body. This means it can be imported (or
+called) with the right type today — a consumer that imports, say, `strlen` as
+`(param i32) (result i32)` links successfully — and calling it traps at runtime
+rather than silently misbehaving. Following the conventions above, stub
+signatures use `i64` for C `long` (`strtol`) and multi-value returns for pointer
+out-parameters (`strtod`/`strtol` return `(value, endptr)`).
+
 ## Usage
 
 Compile the WAT source to a WASM binary with any standard WAT toolchain:
@@ -157,9 +167,10 @@ wasm-tools parse libc.wat -o libc.wasm
 wat2wasm libc.wat -o libc.wasm
 ```
 
-The module exports its linear memory (as `memory`) and every implemented
-function under its C name, so you can import the functions you need into your
-own module or call them directly from a host runtime.
+The module exports its linear memory (as `memory`) and every function — both
+implemented functions and the typed stubs — under its C name, so you can import
+the functions you need into your own module or call them directly from a host
+runtime. (See [Stubs](#stubs) for the behavior of unimplemented functions.)
 
 ## Testing
 

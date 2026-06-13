@@ -204,3 +204,51 @@ test("memchr finds a byte or returns NULL", () => {
   assert.equal(libc.memchr(s, 30, 4), s + 2);
   assert.equal(libc.memchr(s, 99, 4), 0); // not found -> NULL
 });
+
+// ---------------------------------------------------------------------------
+// Unimplemented stubs
+//
+// Each stub must be exported with a real (typed) signature and an (unreachable)
+// body — so consumers can link against it with the correct C-compatible type
+// today, and calling it traps rather than silently returning. A regression to a
+// bare `(func $name)` would either drop the export or stop trapping, which these
+// assertions catch. Args are the function's arity (values are irrelevant since
+// the body traps immediately).
+// ---------------------------------------------------------------------------
+
+const STUBS = {
+  // stdlib.h
+  bsearch: [0, 0, 0, 0, 0],
+  qsort: [0, 0, 0, 0],
+  rand: [],
+  srand: [0],
+  atof: [0],
+  atoi: [0],
+  strtod: [0],
+  strtol: [0, 0],
+  // string.h
+  strcpy: [0, 0],
+  strncpy: [0, 0, 0],
+  strcat: [0, 0],
+  strncat: [0, 0, 0],
+  strlen: [0],
+  strcmp: [0, 0],
+  strcoll: [0, 0],
+  strncmp: [0, 0, 0],
+  strxfrm: [0, 0, 0],
+  strchr: [0, 0],
+  strcspn: [0, 0],
+  strpbrk: [0, 0],
+  strrchr: [0, 0],
+  strspn: [0, 0],
+  strstr: [0, 0],
+  strtok: [0, 0],
+  strerror: [0],
+};
+
+for (const [name, args] of Object.entries(STUBS)) {
+  test(`stub ${name} is exported and traps`, () => {
+    assert.equal(typeof libc[name], "function", `${name} is not exported`);
+    assert.throws(() => libc[name](...args), WebAssembly.RuntimeError);
+  });
+}
