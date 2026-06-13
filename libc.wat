@@ -268,8 +268,48 @@
     (unreachable)
   )
   
+  ;; e^x via Cephes range reduction: x = n*ln2 + r, exp(x) = 2^n * exp(r), with
+  ;; exp(r) from a rational minimax approximation on the reduced r. Accurate to
+  ;; ~1 ULP. Overflows to +inf (errno ERANGE) above ~709.78 and underflows to 0
+  ;; (errno ERANGE) below ~-708.40.
   (func $exp (param $x f64) (result f64)
-    (unreachable)
+    (local $n f64)
+    (local $ni i32)
+    (local $xx f64)
+    (local $px f64)
+    ;; NaN passes through (and must not reach the float->int conversion below)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))
+    (if (f64.gt (local.get $x) (f64.const 709.782712893383996732)) (then
+      (global.set $errno (global.get $ERANGE))
+      (return (f64.const inf))
+    ))
+    (if (f64.lt (local.get $x) (f64.const -708.396418532264106224)) (then
+      (global.set $errno (global.get $ERANGE))
+      (return (f64.const 0))
+    ))
+    ;; n = round(x / ln2); reduce x to r = x - n*ln2 (ln2 split into C1+C2)
+    (local.set $n (f64.floor (f64.add (f64.mul (f64.const 1.4426950408889634073599) (local.get $x)) (f64.const 0.5))))
+    (local.set $ni (i32.trunc_f64_s (local.get $n)))
+    (local.set $x (f64.sub (local.get $x) (f64.mul (local.get $n) (f64.const 6.93145751953125e-1))))
+    (local.set $x (f64.sub (local.get $x) (f64.mul (local.get $n) (f64.const 1.42860682030941723212e-6))))
+    (local.set $xx (f64.mul (local.get $x) (local.get $x)))
+    ;; px = x * P(xx), P degree 2
+    (local.set $px (f64.mul (local.get $x)
+      (f64.add (f64.mul (f64.add (f64.mul
+        (f64.const 1.26177193074810590878e-4) (local.get $xx))
+        (f64.const 3.02994407707441961300e-2)) (local.get $xx))
+        (f64.const 9.99999999999999999910e-1))))
+    ;; x = px / (Q(xx) - px), Q degree 3
+    (local.set $x (f64.div (local.get $px)
+      (f64.sub
+        (f64.add (f64.mul (f64.add (f64.mul (f64.add (f64.mul
+          (f64.const 3.00198505138664455042e-6) (local.get $xx))
+          (f64.const 2.52448340349684104192e-3)) (local.get $xx))
+          (f64.const 2.27265548208155028766e-1)) (local.get $xx))
+          (f64.const 2.00000000000000000005e0))
+        (local.get $px))))
+    ;; exp(r) = 1 + 2x, then scale by 2^n
+    (call $ldexp (f64.add (f64.const 1) (f64.mul (f64.const 2) (local.get $x))) (local.get $ni))
   )
   
   ;; Uses multiple return in place of return pointer.
@@ -327,12 +367,66 @@
     (f64.mul (local.get $x) (local.get $scale))
   )
 
+  ;; Natural logarithm via Cephes: x = m * 2^e (frexp), then log(x) = e*ln2 +
+  ;; log(m) with log(m) from a rational minimax approximation around 1. Accurate
+  ;; to ~1 ULP. log(x<0) is NaN (errno EDOM); log(0) is -inf (errno ERANGE).
   (func $log (param $x f64) (result f64)
-    (unreachable)
+    (local $e i32)
+    (local $ef f64)
+    (local $m f64)
+    (local $z f64)
+    (local $y f64)
+    (local $p f64)  ;; numerator polynomial P(m)
+    (local $q f64)  ;; denominator polynomial Q(m), monic
+    ;; domain and special values
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (if (f64.lt (local.get $x) (f64.const 0)) (then
+      (global.set $errno (global.get $EDOM))
+      (return (f64.const nan))
+    ))
+    (if (f64.eq (local.get $x) (f64.const 0)) (then
+      (global.set $errno (global.get $ERANGE))
+      (return (f64.const -inf))
+    ))
+    (if (f64.eq (local.get $x) (f64.const inf)) (then (return (local.get $x))))
+    ;; m in [0.5, 1), x == m * 2^e
+    (call $frexp (local.get $x))
+    (local.set $m)
+    (local.set $e)
+    ;; bring m into [sqrt(1/2), sqrt(2)) so the series converges around 1
+    (if (f64.lt (local.get $m) (f64.const 0.70710678118654752440)) (then
+      (local.set $e (i32.sub (local.get $e) (i32.const 1)))
+      (local.set $m (f64.sub (f64.add (local.get $m) (local.get $m)) (f64.const 1))) ;; 2m - 1
+    ) (else
+      (local.set $m (f64.sub (local.get $m) (f64.const 1))) ;; m - 1
+    ))
+    (local.set $ef (f64.convert_i32_s (local.get $e)))
+    (local.set $z (f64.mul (local.get $m) (local.get $m)))
+    ;; P(m): Horner over 6 coefficients (degree 5)
+    (local.set $p (f64.const 1.01875663804580931796e-4))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $m)) (f64.const 4.97494994976747001425e-1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $m)) (f64.const 4.70579119878881725854e0)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $m)) (f64.const 1.44989225341610930846e1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $m)) (f64.const 1.79368678507819816313e1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $m)) (f64.const 7.70838733755885391666e0)))
+    ;; Q(m): monic Horner (leading coefficient 1) over 5 trailing coefficients
+    (local.set $q (f64.add (local.get $m) (f64.const 1.12873587189167450590e1)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $m)) (f64.const 4.52279145837532221105e1)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $m)) (f64.const 8.29875266912776603211e1)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $m)) (f64.const 7.11544750618563894466e1)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $m)) (f64.const 2.31251620126765340583e1)))
+    ;; y = m * (z * P/Q)
+    (local.set $y (f64.mul (local.get $m) (f64.mul (local.get $z) (f64.div (local.get $p) (local.get $q)))))
+    ;; reconstruct: log(x) = (m + y) + e*ln2, with ln2 split for precision
+    (local.set $y (f64.sub (local.get $y) (f64.mul (local.get $ef) (f64.const 2.121944400546905827679e-4))))
+    (local.set $y (f64.sub (local.get $y) (f64.mul (f64.const 0.5) (local.get $z))))
+    (local.set $z (f64.add (local.get $m) (local.get $y)))
+    (f64.add (local.get $z) (f64.mul (local.get $ef) (f64.const 0.693359375)))
   )
 
+  ;; Base-10 logarithm, derived as log(x) * log10(e). Accurate to a few ULP.
   (func $log10 (param $x f64) (result f64)
-    (unreachable)
+    (f64.mul (call $log (local.get $x)) (f64.const 0.43429448190325182765))
   )
   
   ;; Uses multiple return in place of return pointer.
@@ -1278,6 +1372,9 @@
   (export "frexp" (func $frexp))
   (export "ldexp" (func $ldexp))
   (export "modf" (func $modf))
+  (export "exp" (func $exp))
+  (export "log" (func $log))
+  (export "log10" (func $log10))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))
