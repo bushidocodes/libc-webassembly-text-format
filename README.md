@@ -6,6 +6,8 @@ A WebAssembly Text Format (WAT) implementation of portions of the C Standard Lib
 
 `libc.wat` provides C standard library functions implemented directly in WebAssembly Text Format. It targets pure WebAssembly environments where you want familiar libc semantics without external dependencies, and takes advantage of WebAssembly-specific features like multi-value returns and native memory/math instructions.
 
+Every function from the headers it covers (`assert.h`, `ctype.h`, `math.h`, `stdlib.h`, `string.h`) is implemented — see the status tables below for per-function notes. The transcendental `math.h` functions are accurate to a few ULP rather than being correctly rounded.
+
 ## Implementation Status
 
 ### assert.h
@@ -60,9 +62,9 @@ All functions assume ASCII locale.
 | `atan2` | Implemented (quadrant-correct; via `atan`) |
 | `asin` | Implemented (`atan2(x, √(1−x²))`; ~2 ULP) |
 | `acos` | Implemented (`atan2(√(1−x²), x)`; ~2 ULP) |
-| `cosh` | Stub |
-| `sinh` | Stub |
-| `tanh` | Stub |
+| `sinh` | Implemented (Taylor near 0, else exponentials; ~2 ULP) |
+| `cosh` | Implemented (via `exp`; ~2 ULP) |
+| `tanh` | Implemented (Cephes rational near 0, else `exp`; ~2 ULP) |
 
 The trigonometric functions reduce the argument with a two-part π/4 split, so they are accurate (~1 ULP) for moderate magnitudes but lose precision for very large arguments (roughly one decimal digit per power of ten beyond ~10⁷), since they do not implement full Payne–Hanek reduction.
 
@@ -179,15 +181,6 @@ standard does not mandate an algorithm.
 
 `strerror` returns pointers into a small **reserved region of linear memory (bytes 16–255)** that is initialized from `(data ...)` segments with the error-message strings. A host that uses `strerror` must avoid overwriting that region; all other memory (including byte 0, treated as `NULL`) is free for the host to use.
 
-### Stubs
-
-Every function marked "Stub" above (the remaining `math.h` transcendentals and
-`toascii`) is declared with its correct C-compatible WAT signature and an
-`(unreachable)` body. This means it can be imported (or called) with the right
-type today — a consumer that imports, say, `acos` as `(param f64) (result f64)`
-links successfully — and calling it traps at runtime rather than silently
-misbehaving.
-
 ## Usage
 
 Compile the WAT source to a WASM binary with any standard WAT toolchain:
@@ -200,10 +193,9 @@ wasm-tools parse libc.wat -o libc.wasm
 wat2wasm libc.wat -o libc.wasm
 ```
 
-The module exports its linear memory (as `memory`) and every function — both
-implemented functions and the typed stubs — under its C name, so you can import
-the functions you need into your own module or call them directly from a host
-runtime. (See [Stubs](#stubs) for the behavior of unimplemented functions.)
+The module exports its linear memory (as `memory`) and every function under its
+C name, so you can import the functions you need into your own module or call
+them directly from a host runtime.
 
 ## Testing
 

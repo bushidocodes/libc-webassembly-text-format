@@ -507,16 +507,89 @@
     (local.get $y)
   )
   
+  ;; cosh(x) = (e^x + e^-x)/2. For |x| beyond the exp overflow threshold the
+  ;; result is formed as 0.5 * (e^(|x|/2))^2 to extend the finite range before
+  ;; overflowing to +inf. cosh(+/-inf) = +inf; cosh(NaN) = NaN.
   (func $cosh (param $x f64) (result f64)
-    (unreachable)
-  )
-  
-  (func $sinh (param $x f64) (result f64)
-    (unreachable)
+    (local $y f64)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (local.set $x (f64.abs (local.get $x))) ;; cosh is even
+    (if (f64.gt (local.get $x) (f64.const 709.782712893384)) (then
+      (local.set $y (call $exp (f64.mul (f64.const 0.5) (local.get $x))))
+      (return (f64.mul (f64.mul (f64.const 0.5) (local.get $y)) (local.get $y)))
+    ))
+    (local.set $y (call $exp (local.get $x)))
+    (f64.add (f64.mul (f64.const 0.5) (local.get $y)) (f64.div (f64.const 0.5) (local.get $y)))
   )
 
+  ;; sinh(x) = (e^x - e^-x)/2. For |x| <= 1 a minimax polynomial avoids the
+  ;; cancellation in the exponential form; larger |x| uses the exponentials
+  ;; directly (with the squared-exp trick past the overflow threshold).
+  ;; sinh(+/-inf) = +/-inf; preserves -0.
+  (func $sinh (param $x f64) (result f64)
+    (local $a f64)
+    (local $z f64)
+    (local $p f64)
+    (local $q f64)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (local.set $a (f64.abs (local.get $x)))
+    (if (f64.gt (local.get $a) (f64.const 1)) (then
+      (if (f64.ge (local.get $a) (f64.const 709.782712893384)) (then
+        ;; avoid overflowing exp: 0.5 * (e^(a/2))^2, sign of x
+        (local.set $a (call $exp (f64.mul (f64.const 0.5) (local.get $a))))
+        (local.set $a (f64.mul (f64.mul (f64.const 0.5) (local.get $a)) (local.get $a)))
+        (return (f64.copysign (local.get $a) (local.get $x)))
+      ))
+      (local.set $a (call $exp (local.get $a)))
+      (local.set $a (f64.sub (f64.mul (f64.const 0.5) (local.get $a)) (f64.div (f64.const 0.5) (local.get $a))))
+      (return (f64.copysign (local.get $a) (local.get $x)))
+    ))
+    ;; |x| <= 1: Taylor series, x * sum_{k=0}^{9} z^k / (2k+1)!, z = x^2.
+    ;; Accurate to ~3 ULP and free of the (e^x - e^-x) cancellation.
+    (local.set $z (f64.mul (local.get $x) (local.get $x)))
+    (local.set $p (f64.const 8.22063524662433e-18))   ;; 1/19!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 2.8114572543455206e-15)))  ;; 1/17!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 7.647163731819816e-13)))   ;; 1/15!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 1.6059043836821613e-10)))  ;; 1/13!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 2.505210838544172e-8)))    ;; 1/11!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 2.7557319223985893e-6)))   ;; 1/9!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 1.984126984126984e-4)))    ;; 1/7!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 8.333333333333333e-3)))    ;; 1/5!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 0.16666666666666666)))     ;; 1/3!
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $z)) (f64.const 1)))                       ;; 1/1!
+    (f64.mul (local.get $x) (local.get $p))
+  )
+
+  ;; tanh(x). Saturates to +/-1 for large |x|; uses (e^2x - 1)/(e^2x + 1) in the
+  ;; mid range and a minimax polynomial near 0 to avoid cancellation. Preserves
+  ;; -0; tanh(+/-inf) = +/-1.
   (func $tanh (param $x f64) (result f64)
-    (unreachable)
+    (local $z f64)
+    (local $s f64)
+    (local $p f64)
+    (local $q f64)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (local.set $z (f64.abs (local.get $x)))
+    (if (f64.gt (local.get $z) (f64.const 354.891356446692)) (then ;; 0.5*MAXLOG: |tanh| == 1
+      (return (f64.copysign (f64.const 1) (local.get $x)))
+    ))
+    (if (f64.ge (local.get $z) (f64.const 0.625)) (then
+      (local.set $s (call $exp (f64.mul (f64.const 2) (local.get $z))))
+      ;; (s-1)/(s+1) == 1 - 2/(s+1)
+      (local.set $z (f64.sub (f64.const 1) (f64.div (f64.const 2) (f64.add (local.get $s) (f64.const 1)))))
+      (return (f64.copysign (local.get $z) (local.get $x)))
+    ))
+    (if (f64.eq (local.get $x) (f64.const 0)) (then (return (local.get $x)))) ;; preserve -0
+    ;; |x| < 0.625: x + x*s*P(s)/Q(s), s = x^2
+    (local.set $s (f64.mul (local.get $x) (local.get $x)))
+    (local.set $p (f64.const -9.64399179425052238628e-1))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $s)) (f64.const -9.92877231001918586564e1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $s)) (f64.const -1.61468768441708447952e3)))
+    (local.set $q (f64.add (local.get $s) (f64.const 1.12811678491632931402e2)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $s)) (f64.const 2.23548839060100448583e3)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $s)) (f64.const 4.84406305325125486048e3)))
+    (f64.add (local.get $x)
+      (f64.mul (local.get $x) (f64.mul (local.get $s) (f64.div (local.get $p) (local.get $q)))))
   )
   
   ;; e^x via Cephes range reduction: x = n*ln2 + r, exp(x) = 2^n * exp(r), with
@@ -1735,6 +1808,9 @@
   (export "atan2" (func $atan2))
   (export "asin" (func $asin))
   (export "acos" (func $acos))
+  (export "sinh" (func $sinh))
+  (export "cosh" (func $cosh))
+  (export "tanh" (func $tanh))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))

@@ -478,6 +478,37 @@ test("log10 approximates log base 10 to within a few ULP", () => {
   }
 });
 
+test("sinh, cosh, and tanh are accurate", () => {
+  assert.equal(libc.sinh(0), 0);
+  assert.ok(Object.is(libc.sinh(-0), -0));
+  assert.equal(libc.cosh(0), 1);
+  assert.equal(libc.tanh(0), 0);
+  assert.ok(Object.is(libc.tanh(-0), -0));
+
+  for (let x = -20; x <= 20; x += 0.0137) {
+    closeUlp(libc.sinh(x), Math.sinh(x), 4, `sinh(${x})`);
+    closeUlp(libc.cosh(x), Math.cosh(x), 4, `cosh(${x})`);
+    closeUlp(libc.tanh(x), Math.tanh(x), 4, `tanh(${x})`);
+  }
+
+  // specials
+  assert.equal(libc.sinh(Infinity), Infinity);
+  assert.equal(libc.sinh(-Infinity), -Infinity);
+  assert.equal(libc.cosh(Infinity), Infinity);
+  assert.equal(libc.cosh(-Infinity), Infinity);
+  assert.equal(libc.tanh(Infinity), 1);
+  assert.equal(libc.tanh(-Infinity), -1);
+  assert.ok(Number.isNaN(libc.sinh(NaN)));
+  assert.ok(Number.isNaN(libc.cosh(NaN)));
+  assert.ok(Number.isNaN(libc.tanh(NaN)));
+
+  // near the overflow boundary the result is still finite, then overflows
+  closeUlp(libc.sinh(710), Math.sinh(710), 4, "sinh(710)");
+  closeUlp(libc.cosh(710), Math.cosh(710), 4, "cosh(710)");
+  assert.equal(libc.sinh(720), Infinity);
+  assert.equal(libc.cosh(720), Infinity);
+});
+
 test("atan is accurate", () => {
   assert.equal(libc.atan(0), 0);
   assert.ok(Object.is(libc.atan(-0), -0));
