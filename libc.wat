@@ -442,8 +442,109 @@
       (else (f64.sub (local.get $value) (local.get $ip))))
   )
   
+  ;; base^n for an integer n via binary exponentiation (internal helper). Each
+  ;; multiplication rounds once, so small integer powers are near-exact and a
+  ;; negative base gets the right sign automatically. n is taken as i64.
+  (func $powi (param $base f64) (param $n i64) (result f64)
+    (local $result f64)
+    (local $neg i32)
+    (local.set $result (f64.const 1))
+    (if (i64.lt_s (local.get $n) (i64.const 0)) (then
+      (local.set $neg (i32.const 1))
+      (local.set $n (i64.sub (i64.const 0) (local.get $n)))
+    ))
+    (block $done (loop $loop
+      (br_if $done (i64.eqz (local.get $n)))
+      (if (i64.ne (i64.and (local.get $n) (i64.const 1)) (i64.const 0)) (then
+        (local.set $result (f64.mul (local.get $result) (local.get $base)))
+      ))
+      (local.set $base (f64.mul (local.get $base) (local.get $base)))
+      (local.set $n (i64.shr_u (local.get $n) (i64.const 1)))
+      (br $loop)
+    ))
+    (if (result f64) (local.get $neg)
+      (then (f64.div (f64.const 1) (local.get $result)))
+      (else (local.get $result)))
+  )
+
+  ;; x^y. The general (x > 0) case is exp(y * log(x)); the many special cases of
+  ;; C99 pow are handled explicitly. A negative base with a non-integer exponent
+  ;; is a domain error (NaN, errno EDOM); a zero base with a negative exponent is
+  ;; a pole error (+/-inf, errno ERANGE). Note this follows C99 (e.g. pow(+/-1,
+  ;; +/-inf) == 1), which differs from JavaScript's Math.pow at those points.
   (func $pow (param $x f64) (param $y f64) (result f64)
-    (unreachable)
+    (local $ax f64)     ;; |x|
+    (local $yint i32)   ;; y is an integer
+    (local $yodd i32)   ;; y is an odd integer
+    (local $negzero i32);; x is -0
+    (local $r f64)
+    ;; pow(x, 0) == 1 for every x (even NaN); pow(1, y) == 1 for every y
+    (if (f64.eq (local.get $y) (f64.const 0)) (then (return (f64.const 1))))
+    (if (f64.eq (local.get $x) (f64.const 1)) (then (return (f64.const 1))))
+    ;; any remaining NaN operand yields NaN
+    (if (i32.or (f64.ne (local.get $x) (local.get $x)) (f64.ne (local.get $y) (local.get $y)))
+      (then (return (f64.const nan))))
+
+    (local.set $ax (f64.abs (local.get $x)))
+    (local.set $yint (f64.eq (f64.floor (local.get $y)) (local.get $y)))
+    (local.set $yodd (i32.and (local.get $yint)
+      (f64.eq (call $fmod (f64.abs (local.get $y)) (f64.const 2)) (f64.const 1))))
+
+    ;; y == +/- infinity
+    (if (f64.eq (local.get $y) (f64.const inf)) (then
+      (if (f64.lt (local.get $ax) (f64.const 1)) (then (return (f64.const 0))))
+      (if (f64.gt (local.get $ax) (f64.const 1)) (then (return (f64.const inf))))
+      (return (f64.const 1)) ;; |x| == 1 (i.e. x == -1): C99 pow(-1, inf) == 1
+    ))
+    (if (f64.eq (local.get $y) (f64.const -inf)) (then
+      (if (f64.lt (local.get $ax) (f64.const 1)) (then (return (f64.const inf))))
+      (if (f64.gt (local.get $ax) (f64.const 1)) (then (return (f64.const 0))))
+      (return (f64.const 1))
+    ))
+
+    ;; x == +/- infinity
+    (if (f64.eq (local.get $x) (f64.const inf)) (then
+      (return (if (result f64) (f64.gt (local.get $y) (f64.const 0)) (then (f64.const inf)) (else (f64.const 0))))
+    ))
+    (if (f64.eq (local.get $x) (f64.const -inf)) (then
+      ;; equivalent to pow(-0, -y)
+      (if (f64.gt (local.get $y) (f64.const 0)) (then
+        (return (if (result f64) (local.get $yodd) (then (f64.const -inf)) (else (f64.const inf))))
+      ))
+      (return (if (result f64) (local.get $yodd) (then (f64.const -0)) (else (f64.const 0))))
+    ))
+
+    ;; x == 0 (+0 or -0)
+    (if (f64.eq (local.get $x) (f64.const 0)) (then
+      (local.set $negzero (i64.lt_s (i64.reinterpret_f64 (local.get $x)) (i64.const 0)))
+      (if (f64.gt (local.get $y) (f64.const 0)) (then
+        (return (if (result f64) (i32.and (local.get $negzero) (local.get $yodd))
+          (then (f64.const -0)) (else (f64.const 0))))
+      ))
+      ;; y < 0: pole error
+      (global.set $errno (global.get $ERANGE))
+      (return (if (result f64) (i32.and (local.get $negzero) (local.get $yodd))
+        (then (f64.const -inf)) (else (f64.const inf))))
+    ))
+
+    ;; integer exponent within a safe range: near-exact via binary exponentiation
+    ;; (this also yields the correct sign for a negative base)
+    (if (i32.and (local.get $yint) (f64.lt (f64.abs (local.get $y)) (f64.const 0x1p31))) (then
+      (return (call $powi (local.get $x) (i64.trunc_f64_s (local.get $y))))
+    ))
+
+    ;; x < 0 finite, with a non-integer (or out-of-range integer) exponent
+    (if (f64.lt (local.get $x) (f64.const 0)) (then
+      (if (i32.eqz (local.get $yint)) (then ;; non-integer power of a negative base
+        (global.set $errno (global.get $EDOM))
+        (return (f64.const nan))
+      ))
+      (local.set $r (call $exp (f64.mul (local.get $y) (call $log (local.get $ax)))))
+      (return (if (result f64) (local.get $yodd) (then (f64.neg (local.get $r))) (else (local.get $r))))
+    ))
+
+    ;; general case: x > 0
+    (call $exp (f64.mul (local.get $y) (call $log (local.get $x))))
   )
 
   (func $sqrt (param $x f64) (result f64)
@@ -1375,6 +1476,7 @@
   (export "exp" (func $exp))
   (export "log" (func $log))
   (export "log10" (func $log10))
+  (export "pow" (func $pow))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))

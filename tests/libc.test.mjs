@@ -478,6 +478,78 @@ test("log10 approximates log base 10 to within a few ULP", () => {
   }
 });
 
+test("pow is near-exact for integer exponents", () => {
+  // small integer powers (including negative bases and reciprocals) are exact
+  for (const [x, y, want] of [[2, 10, 1024], [-2, 3, -8], [-3, 3, -27],
+                              [10, -2, 0.01], [2, -3, 0.125], [5, 3, 125],
+                              [3, 4, 81], [7, 2, 49], [2, 0, 1], [9, 1, 9]]) {
+    assert.equal(libc.pow(x, y), want, `pow(${x}, ${y})`);
+  }
+  // larger integer powers stay within a few ULP of Math.pow
+  for (let i = 0; i < 2000; i++) {
+    const x = (Math.random() - 0.5) * 30;
+    const y = Math.floor((Math.random() - 0.5) * 30);
+    closeUlp(libc.pow(x, y), Math.pow(x, y), 32, `pow(${x}, ${y})`);
+  }
+});
+
+test("pow approximates x^y for non-integer exponents", () => {
+  assert.equal(libc.pow(2, 0.5), Math.SQRT2);
+  // exp(y*log x) compounds a few tens of ULP of error; not correctly rounded
+  for (let i = 0; i < 5000; i++) {
+    const x = Math.exp((Math.random() - 0.5) * 20); // positive base
+    const y = (Math.random() - 0.5) * 20;
+    closeUlp(libc.pow(x, y), Math.pow(x, y), 100, `pow(${x}, ${y})`);
+  }
+});
+
+test("pow handles the C99 special cases", () => {
+  const { value: EDOM } = libc.EDOM;
+  const { value: ERANGE } = libc.ERANGE;
+
+  // anything**0 == 1 (even NaN); 1**anything == 1 (even NaN)
+  assert.equal(libc.pow(5, 0), 1);
+  assert.equal(libc.pow(0, 0), 1);
+  assert.equal(libc.pow(NaN, 0), 1);
+  assert.equal(libc.pow(1, NaN), 1);
+  assert.ok(Number.isNaN(libc.pow(NaN, 2)));
+
+  // NOTE: C99 differs from JS Math.pow here -- pow(+/-1, +/-inf) == 1
+  assert.equal(libc.pow(1, Infinity), 1);
+  assert.equal(libc.pow(-1, Infinity), 1);
+  assert.equal(libc.pow(-1, -Infinity), 1);
+
+  // x ** +/-inf
+  assert.equal(libc.pow(2, Infinity), Infinity);
+  assert.equal(libc.pow(0.5, Infinity), 0);
+  assert.equal(libc.pow(2, -Infinity), 0);
+  assert.equal(libc.pow(0.5, -Infinity), Infinity);
+
+  // +/-inf ** y
+  assert.equal(libc.pow(Infinity, 2), Infinity);
+  assert.equal(libc.pow(Infinity, -2), 0);
+  assert.equal(libc.pow(-Infinity, 3), -Infinity);
+  assert.equal(libc.pow(-Infinity, 2), Infinity);
+  assert.ok(Object.is(libc.pow(-Infinity, -3), -0)); // 1/(-inf) == -0
+  assert.equal(libc.pow(-Infinity, -2), 0);
+
+  // signed-zero base
+  assert.ok(Object.is(libc.pow(0, 3), 0));
+  assert.ok(Object.is(libc.pow(-0, 3), -0)); // odd exponent keeps the sign
+  assert.ok(Object.is(libc.pow(-0, 2), 0)); // even exponent does not
+
+  // zero base, negative exponent -> pole error (+/-inf, ERANGE)
+  libc.errno.value = 0;
+  assert.equal(libc.pow(0, -2), Infinity);
+  assert.equal(libc.errno.value, ERANGE);
+  assert.ok(Object.is(libc.pow(-0, -3), -Infinity));
+
+  // negative base, non-integer exponent -> domain error (NaN, EDOM)
+  libc.errno.value = 0;
+  assert.ok(Number.isNaN(libc.pow(-2, 0.5)));
+  assert.equal(libc.errno.value, EDOM);
+});
+
 // ---------------------------------------------------------------------------
 // string.h
 // ---------------------------------------------------------------------------
