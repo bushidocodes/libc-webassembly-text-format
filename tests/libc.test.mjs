@@ -237,6 +237,48 @@ test("strtol clamps overflow to LONG_MAX/LONG_MIN and sets ERANGE", () => {
   assert.equal(libc.errno.value, ERANGE);
 });
 
+test("strtod parses decimal floats and reports endptr", () => {
+  const run = (str) => {
+    libc.errno.value = 0;
+    const p = putStr(3000, str);
+    const [v, end] = libc.strtod(p);
+    return [v, end - p, libc.errno.value];
+  };
+
+  // these all round-trip exactly to the same double as JS Number()
+  for (const s of ["3.14", "-2.5", ".5", "5.", "42", "1e3", "1.5e-3",
+                   "6.022e23", "0.0", "1E10", "+7.25"]) {
+    assert.equal(run(s)[0], Number(s), `strtod(${JSON.stringify(s)})`);
+  }
+
+  assert.deepEqual(run("3.14"), [3.14, 4, 0]);
+  assert.deepEqual(run("  -0.001"), [-0.001, 8, 0]); // skips leading whitespace
+  assert.deepEqual(run("12.5abc"), [12.5, 4, 0]); // stops at first non-numeric
+  assert.deepEqual(run("abc"), [0, 0, 0]); // no conversion -> endptr == nptr
+  // a trailing 'e' with no exponent digits is not consumed
+  assert.deepEqual(run("5e"), [5, 1, 0]);
+});
+
+test("strtod sets ERANGE on overflow and underflow", () => {
+  const ERANGE = libc.ERANGE.value;
+  const run = (str) => {
+    libc.errno.value = 0;
+    const [v] = libc.strtod(putStr(3000, str));
+    return [v, libc.errno.value];
+  };
+
+  assert.deepEqual(run("1e400"), [Infinity, ERANGE]);
+  assert.deepEqual(run("-1e400"), [-Infinity, ERANGE]);
+  assert.deepEqual(run("1e-400"), [0, ERANGE]);
+});
+
+test("atof equals strtod's value", () => {
+  for (const s of ["3.14", "-42.5", "1e-3", "0", "10abc"]) {
+    const p = putStr(3000, s);
+    assert.equal(libc.atof(p), libc.strtod(p)[0]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // math.h
 // ---------------------------------------------------------------------------
@@ -481,8 +523,6 @@ const STUBS = {
   // stdlib.h
   bsearch: [0, 0, 0, 0, 0],
   qsort: [0, 0, 0, 0],
-  atof: [0],
-  strtod: [0],
 };
 
 for (const [name, args] of Object.entries(STUBS)) {
