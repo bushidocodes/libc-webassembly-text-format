@@ -11,6 +11,10 @@
   ;; standard's strtok, this is process-global state and is not reentrant.
   (global $strtok_save (mut i32) (i32.const 0))
 
+  ;; PRNG state for $rand / $srand. Held as a 64-bit value (C `unsigned long`)
+  ;; and seeded to 1, matching the C standard's reference generator.
+  (global $rand_seed (mut i64) (i64.const 1))
+
   ;; assert.h
   ;; Ignores NDEBUG
   (func $assert (param $condition i32)
@@ -358,13 +362,24 @@
   )
 
   ;; int rand(void)
+  ;; The C standard's portable reference generator (a linear congruential
+  ;; generator). Returns a value in [0, RAND_MAX] where RAND_MAX is 32767.
   (func $rand (result i32)
-    (unreachable)
+    (global.set $rand_seed
+      (i64.add
+        (i64.mul (global.get $rand_seed) (i64.const 1103515245))
+        (i64.const 12345)
+      )
+    )
+    ;; (unsigned)(seed / 65536) % 32768
+    (i32.wrap_i64
+      (i64.and (i64.shr_u (global.get $rand_seed) (i64.const 16)) (i64.const 0x7fff))
+    )
   )
 
   ;; void srand(unsigned int seed)
   (func $srand (param $seed i32)
-    (unreachable)
+    (global.set $rand_seed (i64.extend_i32_u (local.get $seed)))
   )
 
   ;; double atof(const char *nptr)
@@ -373,8 +388,44 @@
   )
 
   ;; int atoi(const char *nptr)
+  ;; Skips leading whitespace, accepts an optional sign, and converts the
+  ;; following decimal digits. Parsing stops at the first non-digit. As in C,
+  ;; overflow is undefined (here it simply wraps mod 2^32).
   (func $atoi (param $nptr i32) (result i32)
-    (unreachable)
+    (local $result i32)
+    (local $sign i32)
+    (local $c i32)
+    (local.set $sign (i32.const 1))
+    ;; skip leading whitespace
+    (block $ws_done
+      (loop $ws
+        (br_if $ws_done (i32.eqz (call $isspace (i32.load8_u (local.get $nptr)))))
+        (local.set $nptr (i32.add (local.get $nptr) (i32.const 1)))
+        (br $ws)
+      )
+    )
+    ;; optional sign
+    (local.set $c (i32.load8_u (local.get $nptr)))
+    (if (i32.eq (local.get $c) (i32.const 45)) (then ;; '-'
+      (local.set $sign (i32.const -1))
+      (local.set $nptr (i32.add (local.get $nptr) (i32.const 1)))
+    ) (else (if (i32.eq (local.get $c) (i32.const 43)) (then ;; '+'
+      (local.set $nptr (i32.add (local.get $nptr) (i32.const 1)))
+    ))))
+    ;; accumulate decimal digits
+    (block $done
+      (loop $digits
+        (local.set $c (i32.load8_u (local.get $nptr)))
+        (br_if $done (i32.eqz (call $isdigit (local.get $c))))
+        (local.set $result (i32.add
+          (i32.mul (local.get $result) (i32.const 10))
+          (i32.sub (local.get $c) (i32.const 48))
+        ))
+        (local.set $nptr (i32.add (local.get $nptr) (i32.const 1)))
+        (br $digits)
+      )
+    )
+    (i32.mul (local.get $result) (local.get $sign))
   )
 
   ;; double strtod(const char *nptr, char **endptr)
@@ -824,13 +875,13 @@
   (export "labs" (func $labs))
   (export "div" (func $div))
   (export "ldiv" (func $ldiv))
+  (export "atoi" (func $atoi))
+  (export "rand" (func $rand))
+  (export "srand" (func $srand))
   ;; Stubs (correct signature, traps until implemented)
   (export "bsearch" (func $bsearch))
   (export "qsort" (func $qsort))
-  (export "rand" (func $rand))
-  (export "srand" (func $srand))
   (export "atof" (func $atof))
-  (export "atoi" (func $atoi))
   (export "strtod" (func $strtod))
   (export "strtol" (func $strtol))
 
