@@ -106,8 +106,8 @@ All functions assume ASCII locale.
 | `strrchr` | Implemented |
 | `strspn` | Implemented |
 | `strstr` | Implemented (naive search) |
-| `strtok` | Stub |
-| `strxfrm` | Stub |
+| `strtok` | Implemented (non-reentrant, like C) |
+| `strxfrm` | Implemented (ASCII locale; identity transform) |
 
 ### Skipped Headers
 
@@ -139,7 +139,7 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 
 ### Global state
 
-`$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2).
+`$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2). `strtok` likewise keeps its scan position in a mutable global (`$strtok_save`), so — exactly like the C standard's `strtok` — it is stateful and not reentrant.
 
 ### Memory operations
 
