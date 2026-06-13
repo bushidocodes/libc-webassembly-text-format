@@ -92,20 +92,20 @@ All functions assume ASCII locale.
 | `memmove` | Implemented (native `memory.copy`) |
 | `memset` | Implemented (native `memory.fill`) |
 | `strcat` | Implemented |
-| `strchr` | Stub |
+| `strchr` | Implemented |
 | `strcmp` | Implemented (returns `-1`/`0`/`1`) |
 | `strcoll` | Implemented (ASCII locale; aliases `strcmp`) |
 | `strcpy` | Implemented |
-| `strcspn` | Stub |
+| `strcspn` | Implemented |
 | `strerror` | Stub |
 | `strlen` | Implemented |
 | `strncat` | Implemented |
 | `strncmp` | Implemented (returns `-1`/`0`/`1`) |
 | `strncpy` | Implemented |
-| `strpbrk` | Stub |
-| `strrchr` | Stub |
-| `strspn` | Stub |
-| `strstr` | Stub |
+| `strpbrk` | Implemented |
+| `strrchr` | Implemented |
+| `strspn` | Implemented |
+| `strstr` | Implemented (naive search) |
 | `strtok` | Stub |
 | `strxfrm` | Stub |
 
