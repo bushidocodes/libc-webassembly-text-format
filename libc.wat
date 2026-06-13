@@ -160,9 +160,9 @@
     )
   )
 
-  ;; TODO
+  ;; Masks charCode down to 7 bits, mapping it into the ASCII range.
   (func $toascii (param $charCode i32) (result i32)
-    (unreachable)
+    (i32.and (local.get $charCode) (i32.const 0x7f))
   )
 
   (func $toupper (param $charCode i32) (result i32)
@@ -272,13 +272,59 @@
     (unreachable)
   )
   
-  ;; Uses multiple return in place of return pointer
+  ;; Uses multiple return in place of return pointer.
+  ;; Splits x into a normalized fraction m (0.5 <= |m| < 1) and an exponent e
+  ;; such that x == m * 2^e. Returns (e, m). For 0, inf, and nan, m is x and e is
+  ;; 0. (Done by reading and rewriting the IEEE-754 fields directly.)
   (func $frexp (param $x f64) (result i32 f64)
-    (unreachable)
+    (local $bits i64)
+    (local $ef i32)     ;; raw biased exponent field
+    (local $e i32)      ;; accumulated exponent adjustment
+    ;; 0, inf, and nan are returned unchanged with e = 0
+    (if (f64.eq (local.get $x) (f64.const 0)) (then (return (i32.const 0) (local.get $x))))
+    (local.set $bits (i64.reinterpret_f64 (local.get $x)))
+    (local.set $ef (i32.wrap_i64 (i64.and (i64.shr_u (local.get $bits) (i64.const 52)) (i64.const 0x7ff))))
+    (if (i32.eq (local.get $ef) (i32.const 0x7ff)) (then (return (i32.const 0) (local.get $x))))
+    ;; subnormal: scale up by 2^54 to normalize, then account for it in e
+    (if (i32.eqz (local.get $ef)) (then
+      (local.set $x (f64.mul (local.get $x) (f64.const 0x1p54)))
+      (local.set $bits (i64.reinterpret_f64 (local.get $x)))
+      (local.set $ef (i32.wrap_i64 (i64.and (i64.shr_u (local.get $bits) (i64.const 52)) (i64.const 0x7ff))))
+      (local.set $e (i32.const -54))
+    ))
+    (local.set $e (i32.add (local.get $e) (i32.sub (local.get $ef) (i32.const 1022))))
+    ;; force the biased exponent to 1022 so the fraction lands in [0.5, 1)
+    (local.set $bits (i64.or
+      (i64.and (local.get $bits) (i64.const 0x800fffffffffffff))
+      (i64.const 0x3fe0000000000000)))
+    (local.get $e)
+    (f64.reinterpret_i64 (local.get $bits))
   )
 
+  ;; Returns x * 2^exp, handling overflow/underflow by staging the scale factor
+  ;; (the musl scalbn approach). Equivalent to scalbn for IEEE doubles.
   (func $ldexp (param $x f64) (param $exp i32) (result f64)
-    (unreachable)
+    (local $scale f64)
+    (if (i32.gt_s (local.get $exp) (i32.const 1023)) (then
+      (local.set $x (f64.mul (local.get $x) (f64.const 0x1p1023)))
+      (local.set $exp (i32.sub (local.get $exp) (i32.const 1023)))
+      (if (i32.gt_s (local.get $exp) (i32.const 1023)) (then
+        (local.set $x (f64.mul (local.get $x) (f64.const 0x1p1023)))
+        (local.set $exp (i32.sub (local.get $exp) (i32.const 1023)))
+        (if (i32.gt_s (local.get $exp) (i32.const 1023)) (then (local.set $exp (i32.const 1023))))
+      ))
+    ) (else (if (i32.lt_s (local.get $exp) (i32.const -1022)) (then
+      (local.set $x (f64.mul (local.get $x) (f64.const 0x1p-969)))
+      (local.set $exp (i32.add (local.get $exp) (i32.const 969)))
+      (if (i32.lt_s (local.get $exp) (i32.const -1022)) (then
+        (local.set $x (f64.mul (local.get $x) (f64.const 0x1p-969)))
+        (local.set $exp (i32.add (local.get $exp) (i32.const 969)))
+        (if (i32.lt_s (local.get $exp) (i32.const -1022)) (then (local.set $exp (i32.const -1022))))
+      ))
+    ))))
+    (local.set $scale (f64.reinterpret_i64
+      (i64.shl (i64.extend_i32_u (i32.add (local.get $exp) (i32.const 1023))) (i64.const 52))))
+    (f64.mul (local.get $x) (local.get $scale))
   )
 
   (func $log (param $x f64) (result f64)
@@ -289,8 +335,17 @@
     (unreachable)
   )
   
+  ;; Uses multiple return in place of return pointer.
+  ;; Splits value into its integral and fractional parts (both keeping value's
+  ;; sign) and returns (integral, fractional). For +/-inf the integral part is
+  ;; +/-inf and the fractional part is +/-0.
   (func $modf (param $value f64) (result f64 f64)
-    (unreachable)
+    (local $ip f64)
+    (local.set $ip (f64.trunc (local.get $value)))
+    (local.get $ip)
+    (if (result f64) (f64.eq (f64.abs (local.get $value)) (f64.const inf))
+      (then (f64.copysign (f64.const 0) (local.get $value)))
+      (else (f64.sub (local.get $value) (local.get $ip))))
   )
   
   (func $pow (param $x f64) (param $y f64) (result f64)
@@ -313,8 +368,37 @@
     (f64.floor (local.get $x))
   )
 
+  ;; Floating-point remainder of x/y: x - n*y for the integer n = trunc(x/y),
+  ;; computed exactly by repeated halving-free doubling and subtraction (each
+  ;; subtraction is exact by Sterbenz's lemma). Returns NaN when y is 0 or x is
+  ;; non-finite; returns x when |x| < |y| (including when y is infinite).
   (func $fmod (param $x f64) (param $y f64) (result f64)
-    (unreachable)
+    (local $ax f64)
+    (local $ay f64)
+    (local $d f64)
+    ;; NaN / inf x / y == 0 all yield NaN
+    (if (i32.or
+          (i32.or (f64.ne (local.get $x) (local.get $x)) (f64.ne (local.get $y) (local.get $y)))
+          (i32.or (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (f64.eq (local.get $y) (f64.const 0)))
+        ) (then
+      (return (f64.const nan))
+    ))
+    (local.set $ax (f64.abs (local.get $x)))
+    (local.set $ay (f64.abs (local.get $y)))
+    (if (f64.lt (local.get $ax) (local.get $ay)) (then (return (local.get $x))))
+    (block $done (loop $loop
+      (br_if $done (f64.lt (local.get $ax) (local.get $ay)))
+      ;; largest d = ay * 2^k with d <= ax
+      (local.set $d (local.get $ay))
+      (block $inner_done (loop $inner
+        (br_if $inner_done (f64.gt (f64.add (local.get $d) (local.get $d)) (local.get $ax)))
+        (local.set $d (f64.add (local.get $d) (local.get $d)))
+        (br $inner)
+      ))
+      (local.set $ax (f64.sub (local.get $ax) (local.get $d)))
+      (br $loop)
+    ))
+    (f64.copysign (local.get $ax) (local.get $x))
   )
 
   ;; setjmp.h - Skipped!
@@ -1183,12 +1267,17 @@
   (export "isxdigit" (func $isxdigit))
   (export "toupper" (func $toupper))
   (export "tolower" (func $tolower))
+  (export "toascii" (func $toascii))
 
   ;; math.h
   (export "sqrt" (func $sqrt))
   (export "ceil" (func $ceil))
   (export "fabs" (func $fabs))
   (export "floor" (func $floor))
+  (export "fmod" (func $fmod))
+  (export "frexp" (func $frexp))
+  (export "ldexp" (func $ldexp))
+  (export "modf" (func $modf))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))

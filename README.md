@@ -35,7 +35,7 @@ All functions assume ASCII locale.
 | `isxdigit` | Implemented |
 | `tolower` | Implemented |
 | `toupper` | Implemented |
-| `toascii` | Stub |
+| `toascii` | Implemented |
 
 ### math.h
 
@@ -45,6 +45,10 @@ All functions assume ASCII locale.
 | `fabs` | Implemented (native `f64.abs`) |
 | `floor` | Implemented (native `f64.floor`) |
 | `sqrt` | Implemented (native `f64.sqrt`) |
+| `fmod` | Implemented (exact, via `f64.trunc`/repeated subtraction) |
+| `frexp` | Implemented (bit-level; returns `(exponent, fraction)`) |
+| `ldexp` | Implemented (`scalbn`-style staged scaling) |
+| `modf` | Implemented (returns `(integral, fractional)`) |
 | `acos` | Stub |
 | `asin` | Stub |
 | `atan` | Stub |
@@ -52,12 +56,8 @@ All functions assume ASCII locale.
 | `cos` | Stub |
 | `cosh` | Stub |
 | `exp` | Stub |
-| `fmod` | Stub |
-| `frexp` | Stub |
-| `ldexp` | Stub |
 | `log` | Stub |
 | `log10` | Stub |
-| `modf` | Stub |
 | `pow` | Stub |
 | `sin` | Stub |
 | `sinh` | Stub |
