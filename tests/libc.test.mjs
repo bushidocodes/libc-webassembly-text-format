@@ -156,6 +156,44 @@ test("itoa_s decimal", () => {
   assert.equal(decode(base, len), "7");
 });
 
+test("atoi parses signed decimal with leading whitespace", () => {
+  assert.equal(libc.atoi(putStr(2000, "123")), 123);
+  assert.equal(libc.atoi(putStr(2000, "-123")), -123);
+  assert.equal(libc.atoi(putStr(2000, "+45")), 45);
+  assert.equal(libc.atoi(putStr(2000, "   7")), 7);
+  assert.equal(libc.atoi(putStr(2000, "42abc")), 42); // stops at first non-digit
+  assert.equal(libc.atoi(putStr(2000, "abc")), 0); // no digits
+  assert.equal(libc.atoi(putStr(2000, "")), 0);
+  assert.equal(libc.atoi(putStr(2000, "0")), 0);
+});
+
+test("rand matches the reference LCG and is seedable", () => {
+  // Reference implementation of the same generator, in 64-bit (unsigned long)
+  // arithmetic, to validate the WAT against the algorithm it implements.
+  let next = 1n;
+  const mask = (1n << 64n) - 1n;
+  const ref = () => {
+    next = (next * 1103515245n + 12345n) & mask;
+    return Number((next >> 16n) & 0x7fffn);
+  };
+
+  libc.srand(1);
+  for (let i = 0; i < 20; i++) assert.equal(libc.rand(), ref());
+
+  // every value lies within [0, RAND_MAX]
+  for (let i = 0; i < 100; i++) {
+    const r = libc.rand();
+    assert.ok(r >= 0 && r <= 32767, `rand() out of range: ${r}`);
+  }
+
+  // seeding resets the sequence deterministically
+  libc.srand(42);
+  const a = [libc.rand(), libc.rand(), libc.rand()];
+  libc.srand(42);
+  const b = [libc.rand(), libc.rand(), libc.rand()];
+  assert.deepEqual(a, b);
+});
+
 // ---------------------------------------------------------------------------
 // math.h
 // ---------------------------------------------------------------------------
@@ -400,10 +438,7 @@ const STUBS = {
   // stdlib.h
   bsearch: [0, 0, 0, 0, 0],
   qsort: [0, 0, 0, 0],
-  rand: [],
-  srand: [0],
   atof: [0],
-  atoi: [0],
   strtod: [0],
   strtol: [0, 0],
 };

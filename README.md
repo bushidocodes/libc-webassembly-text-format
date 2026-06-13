@@ -74,11 +74,11 @@ All functions assume ASCII locale.
 | `ldiv` | Implemented | Returns `(quotient, remainder)` tuple |
 | `itoa_s` | Implemented | Decimal only; returns `(base_address, length)` tuple |
 | `atof` | Stub | |
-| `atoi` | Stub | |
+| `atoi` | Implemented | Skips leading whitespace; optional sign; overflow wraps |
 | `bsearch` | Stub | |
 | `qsort` | Stub | |
-| `rand` | Stub | |
-| `srand` | Stub | |
+| `rand` | Implemented | C reference LCG; `RAND_MAX` is 32767 |
+| `srand` | Implemented | Seeds `rand` |
 | `strtod` | Stub | |
 | `strtol` | Stub | |
 
