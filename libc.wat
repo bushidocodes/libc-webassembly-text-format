@@ -228,20 +228,122 @@
   ;; locale.h - Skipped!
 
   ;; math.h
-  (func $acos (param $x f64) (result f64)
-    (unreachable)
-  )
-  
-  (func $asin (param $x f64) (result f64)
-    (unreachable)
-  )
-  
+
+  ;; arctangent, Cephes algorithm: fold |x| into [0, tan(pi/8)] using
+  ;; atan(x) = pi/2 - atan(1/x) or pi/4 + atan((x-1)/(x+1)), then a rational
+  ;; minimax approximation. Accurate to ~1 ULP. atan(+/-inf) = +/-pi/2.
   (func $atan (param $x f64) (result f64)
+    (local $y f64)     ;; the constant offset (0, pi/4, or pi/2)
+    (local $corr f64)  ;; extra-precision correction for that offset
+    (local $z f64)
+    (local $zz f64)
+    (local $p f64)
+    (local $q f64)
+    (local $sign i32)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (if (f64.eq (local.get $x) (f64.const 0)) (then (return (local.get $x)))) ;; preserve +/-0
+    (if (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (then
+      (return (f64.copysign (f64.const 1.5707963267948966) (local.get $x))) ;; +/-pi/2
+    ))
+    (local.set $sign (i32.const 1))
+    (if (f64.lt (local.get $x) (f64.const 0)) (then
+      (local.set $x (f64.neg (local.get $x)))
+      (local.set $sign (i32.const -1))
+    ))
+    ;; range reduction
+    (if (f64.gt (local.get $x) (f64.const 2.41421356237309504880)) (then ;; x > tan(3pi/8)
+      (local.set $y (f64.const 1.5707963267948966))               ;; pi/2
+      (local.set $corr (f64.const 6.123233995736765886130e-17))
+      (local.set $x (f64.neg (f64.div (f64.const 1) (local.get $x))))
+    ) (else (if (f64.le (local.get $x) (f64.const 0.66)) (then ;; small: no reduction
+      (local.set $y (f64.const 0))
+      (local.set $corr (f64.const 0))
+    ) (else
+      (local.set $y (f64.const 0.7853981633974483))                ;; pi/4
+      (local.set $corr (f64.const 3.061616997868382943065e-17))    ;; 0.5 * MOREBITS
+      (local.set $x (f64.div (f64.sub (local.get $x) (f64.const 1)) (f64.add (local.get $x) (f64.const 1))))
+    ))))
+    (local.set $zz (f64.mul (local.get $x) (local.get $x)))
+    ;; P(zz): degree 4 (5 coefficients)
+    (local.set $p (f64.const -8.750608600031904122785e-1))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.615753718733365076637e1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -7.500855792314704667340e1)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.228866684490136173410e2)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -6.485021904942025371773e1)))
+    ;; Q(zz): monic degree 5 (5 trailing coefficients)
+    (local.set $q (f64.add (local.get $zz) (f64.const 2.485846490142306297962e1)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const 1.650270098316988542046e2)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const 4.328810604912902668951e2)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const 4.853903996359136964868e2)))
+    (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const 1.945506571482613964425e2)))
+    ;; z = x + x * zz * P/Q  (then add the offset and its correction)
+    (local.set $z (f64.add (local.get $x)
+      (f64.mul (local.get $x) (f64.mul (local.get $zz) (f64.div (local.get $p) (local.get $q))))))
+    (local.set $z (f64.add (local.get $y) (f64.add (local.get $z) (local.get $corr))))
+    (if (i32.lt_s (local.get $sign) (i32.const 0)) (then (local.set $z (f64.neg (local.get $z)))))
+    (local.get $z)
+  )
+
+  ;; Two-argument arctangent: the angle of the point (x, y), in (-pi, pi].
+  (func $atan2 (param $y f64) (param $x f64) (result f64)
+    (if (i32.or (f64.ne (local.get $x) (local.get $x)) (f64.ne (local.get $y) (local.get $y)))
+      (then (return (f64.const nan))))
+    ;; x is +/- infinity
+    (if (f64.eq (local.get $x) (f64.const inf)) (then
+      (if (f64.eq (local.get $y) (f64.const inf)) (then (return (f64.const 0.7853981633974483))))      ;; pi/4
+      (if (f64.eq (local.get $y) (f64.const -inf)) (then (return (f64.const -0.7853981633974483))))
+      (return (f64.copysign (f64.const 0) (local.get $y)))
+    ))
+    (if (f64.eq (local.get $x) (f64.const -inf)) (then
+      (if (f64.eq (local.get $y) (f64.const inf)) (then (return (f64.const 2.356194490192345))))       ;; 3pi/4
+      (if (f64.eq (local.get $y) (f64.const -inf)) (then (return (f64.const -2.356194490192345))))
+      (return (f64.copysign (f64.const 3.141592653589793) (local.get $y)))
+    ))
+    ;; y is +/- infinity (x finite)
+    (if (f64.eq (local.get $y) (f64.const inf)) (then (return (f64.const 1.5707963267948966))))
+    (if (f64.eq (local.get $y) (f64.const -inf)) (then (return (f64.const -1.5707963267948966))))
+    ;; x == 0 (either sign)
+    (if (f64.eq (local.get $x) (f64.const 0)) (then
+      (if (f64.eq (local.get $y) (f64.const 0)) (then
+        ;; both zero: +0 base gives +/-0; -0 base gives +/-pi
+        (if (i64.lt_s (i64.reinterpret_f64 (local.get $x)) (i64.const 0))
+          (then (return (f64.copysign (f64.const 3.141592653589793) (local.get $y))))
+          (else (return (local.get $y))))
+      ))
+      (return (f64.copysign (f64.const 1.5707963267948966) (local.get $y)))
+    ))
+    ;; general finite case
+    (if (f64.gt (local.get $x) (f64.const 0))
+      (then (return (call $atan (f64.div (local.get $y) (local.get $x))))) ;; quadrants I, IV
+      (else ;; x < 0: quadrants II, III, offset by +/- pi per sign of y
+        (return (f64.add
+          (call $atan (f64.div (local.get $y) (local.get $x)))
+          (f64.copysign (f64.const 3.141592653589793) (local.get $y))))))
     (unreachable)
   )
-  
-  (func $atan2 (param $y f64) (param $x f64) (result f64)
-    (unreachable)
+
+  ;; arcsine, via asin(x) = atan2(x, sqrt((1-x)(1+x))). Factoring 1 - x^2 as
+  ;; (1-x)(1+x) avoids cancellation near |x| = 1. Domain |x| <= 1 (else NaN,
+  ;; errno EDOM).
+  (func $asin (param $x f64) (result f64)
+    (if (f64.gt (f64.abs (local.get $x)) (f64.const 1)) (then
+      (global.set $errno (global.get $EDOM))
+      (return (f64.const nan))
+    ))
+    (call $atan2 (local.get $x)
+      (f64.sqrt (f64.mul (f64.sub (f64.const 1) (local.get $x)) (f64.add (f64.const 1) (local.get $x)))))
+  )
+
+  ;; arccosine, via acos(x) = atan2(sqrt((1-x)(1+x)), x). Domain |x| <= 1 (else
+  ;; NaN, errno EDOM).
+  (func $acos (param $x f64) (result f64)
+    (if (f64.gt (f64.abs (local.get $x)) (f64.const 1)) (then
+      (global.set $errno (global.get $EDOM))
+      (return (f64.const nan))
+    ))
+    (call $atan2
+      (f64.sqrt (f64.mul (f64.sub (f64.const 1) (local.get $x)) (f64.add (f64.const 1) (local.get $x))))
+      (local.get $x))
   )
   
   ;; sin(z) for the reduced argument z in [-pi/4, pi/4] (Cephes sincof series).
@@ -1629,6 +1731,10 @@
   (export "sin" (func $sin))
   (export "cos" (func $cos))
   (export "tan" (func $tan))
+  (export "atan" (func $atan))
+  (export "atan2" (func $atan2))
+  (export "asin" (func $asin))
+  (export "acos" (func $acos))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))

@@ -56,10 +56,10 @@ All functions assume ASCII locale.
 | `sin` | Implemented (Cephes reduction; ~1 ULP for moderate \|x\|) |
 | `cos` | Implemented (Cephes reduction; ~1 ULP for moderate \|x\|) |
 | `tan` | Implemented (Cephes rational; ~1 ULP away from poles) |
-| `acos` | Stub |
-| `asin` | Stub |
-| `atan` | Stub |
-| `atan2` | Stub |
+| `atan` | Implemented (Cephes rational; ~1 ULP) |
+| `atan2` | Implemented (quadrant-correct; via `atan`) |
+| `asin` | Implemented (`atan2(x, √(1−x²))`; ~2 ULP) |
+| `acos` | Implemented (`atan2(√(1−x²), x)`; ~2 ULP) |
 | `cosh` | Stub |
 | `sinh` | Stub |
 | `tanh` | Stub |

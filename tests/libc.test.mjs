@@ -478,6 +478,70 @@ test("log10 approximates log base 10 to within a few ULP", () => {
   }
 });
 
+test("atan is accurate", () => {
+  assert.equal(libc.atan(0), 0);
+  assert.ok(Object.is(libc.atan(-0), -0));
+  assert.equal(libc.atan(Infinity), Math.atan(Infinity)); // pi/2
+  assert.equal(libc.atan(-Infinity), Math.atan(-Infinity));
+  assert.ok(Number.isNaN(libc.atan(NaN)));
+  for (let x = -50; x <= 50; x += 0.0137) {
+    closeUlp(libc.atan(x), Math.atan(x), 4, `atan(${x})`);
+  }
+});
+
+test("asin and acos are accurate and check their domain", () => {
+  assert.equal(libc.asin(0), 0);
+  assert.equal(libc.asin(1), Math.PI / 2);
+  assert.equal(libc.asin(-1), -Math.PI / 2);
+  assert.equal(libc.acos(1), 0);
+  assert.equal(libc.acos(-1), Math.PI);
+  assert.equal(libc.acos(0), Math.PI / 2);
+
+  for (let x = -1; x <= 1; x += 0.0017) {
+    // near acos(1)=0 and asin(0)=0 the value is tiny -> check absolute error
+    assert.ok(Math.abs(libc.asin(x) - Math.asin(x)) < 1e-14, `asin(${x}) abs`);
+    assert.ok(Math.abs(libc.acos(x) - Math.acos(x)) < 1e-14, `acos(${x}) abs`);
+    if (Math.abs(Math.asin(x)) > 0.3) closeUlp(libc.asin(x), Math.asin(x), 4, `asin(${x})`);
+  }
+
+  // |x| > 1 is a domain error: NaN + EDOM
+  const { value: EDOM } = libc.EDOM;
+  libc.errno.value = 0;
+  assert.ok(Number.isNaN(libc.asin(2)));
+  assert.equal(libc.errno.value, EDOM);
+  libc.errno.value = 0;
+  assert.ok(Number.isNaN(libc.acos(-1.5)));
+  assert.equal(libc.errno.value, EDOM);
+});
+
+test("atan2 covers the quadrants and special cases", () => {
+  // grid over the plane, away from tiny-result directions
+  for (let a = 0.1; a < 6.28; a += 0.013) {
+    const y = Math.sin(a), x = Math.cos(a);
+    closeUlp(libc.atan2(y, x), Math.atan2(y, x), 4, `atan2(${y}, ${x})`);
+  }
+  // quadrant representatives
+  assert.equal(libc.atan2(1, 1), Math.atan2(1, 1)); // pi/4
+  assert.equal(libc.atan2(1, -1), Math.atan2(1, -1)); // 3pi/4
+  assert.equal(libc.atan2(-1, -1), Math.atan2(-1, -1)); // -3pi/4
+  assert.equal(libc.atan2(-1, 1), Math.atan2(-1, 1)); // -pi/4
+
+  // axes and signed zeros
+  assert.equal(libc.atan2(0, -1), Math.PI);
+  assert.ok(Object.is(libc.atan2(-0, -1), -Math.PI));
+  assert.ok(Object.is(libc.atan2(0, 1), 0));
+  assert.ok(Object.is(libc.atan2(-0, 1), -0));
+  assert.equal(libc.atan2(1, 0), Math.PI / 2);
+  assert.equal(libc.atan2(-1, 0), -Math.PI / 2);
+
+  // infinities
+  assert.equal(libc.atan2(Infinity, Infinity), Math.PI / 4);
+  assert.equal(libc.atan2(Infinity, -Infinity), (3 * Math.PI) / 4);
+  assert.equal(libc.atan2(1, Infinity), 0);
+  assert.equal(libc.atan2(1, -Infinity), Math.PI);
+  assert.ok(Number.isNaN(libc.atan2(NaN, 1)));
+});
+
 test("pow is near-exact for integer exponents", () => {
   // small integer powers (including negative bases and reciprocals) are exact
   for (const [x, y, want] of [[2, 10, 1024], [-2, 3, -8], [-3, 3, -27],
