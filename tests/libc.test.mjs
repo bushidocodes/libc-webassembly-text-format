@@ -377,6 +377,14 @@ test("strtok skips leading delimiters and handles multiple delimiters", () => {
   assert.equal(libc.strtok(putStr(2000, ",,,"), putStr(2100, ",")), 0);
 });
 
+test("strerror returns a message for each known errno", () => {
+  assert.equal(getStr(libc.strerror(0)), "Success");
+  assert.equal(getStr(libc.strerror(1)), "Numerical argument out of domain"); // EDOM
+  assert.equal(getStr(libc.strerror(2)), "Numerical result out of range"); // ERANGE
+  assert.equal(getStr(libc.strerror(3)), "Unknown error"); // unmapped
+  assert.equal(getStr(libc.strerror(999)), "Unknown error");
+});
+
 // ---------------------------------------------------------------------------
 // Unimplemented stubs
 //
@@ -398,8 +406,6 @@ const STUBS = {
   atoi: [0],
   strtod: [0],
   strtol: [0, 0],
-  // string.h (still unimplemented)
-  strerror: [0],
 };
 
 for (const [name, args] of Object.entries(STUBS)) {

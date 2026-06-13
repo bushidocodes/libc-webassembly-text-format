@@ -768,9 +768,23 @@
     (local.get $token)
   )
 
+  ;; strerror message table.
+  ;; These NUL-terminated strings live in a small reserved region of linear
+  ;; memory (bytes 16..255); a host must not overwrite that region if it relies
+  ;; on strerror. The offsets below are referenced directly by $strerror.
+  (data (i32.const 16)  "Success\00")                          ;; errnum 0
+  (data (i32.const 48)  "Numerical argument out of domain\00") ;; EDOM (1)
+  (data (i32.const 96)  "Numerical result out of range\00")    ;; ERANGE (2)
+  (data (i32.const 144) "Unknown error\00")                    ;; fallback
+
   ;; char *strerror(int errnum)
+  ;; Returns a pointer to a static message for errnum. This library only defines
+  ;; EDOM and ERANGE; any other non-zero value maps to "Unknown error".
   (func $strerror (param $errnum i32) (result i32)
-    (unreachable)
+    (if (i32.eqz (local.get $errnum)) (then (return (i32.const 16))))
+    (if (i32.eq (local.get $errnum) (global.get $EDOM)) (then (return (i32.const 48))))
+    (if (i32.eq (local.get $errnum) (global.get $ERANGE)) (then (return (i32.const 96))))
+    (i32.const 144)
   )
 
   ;; Exports
@@ -842,6 +856,5 @@
   (export "strstr" (func $strstr))
   (export "strxfrm" (func $strxfrm))
   (export "strtok" (func $strtok))
-  ;; Stubs (correct signature, traps until implemented)
   (export "strerror" (func $strerror))
 )
