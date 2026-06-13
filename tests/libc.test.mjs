@@ -333,6 +333,50 @@ test("strstr finds substring, handles empty needle, or NULL", () => {
   assert.equal(libc.strstr(putStr(2000, "abcabd"), putStr(2100, "abd")), 2003);
 });
 
+test("strxfrm copies and returns the source length (C locale)", () => {
+  const dst = 2000;
+  // ample room: dst becomes an exact copy, return is strlen(src)
+  mem.fill(0xff, dst, dst + 10);
+  assert.equal(libc.strxfrm(dst, putStr(2100, "abcd"), 10), 4);
+  assert.equal(getStr(dst), "abcd");
+
+  // n == 0: nothing written, still returns strlen(src)
+  mem.fill(0xff, dst, dst + 10);
+  assert.equal(libc.strxfrm(dst, putStr(2100, "abcd"), 0), 4);
+  assert.equal(mem[dst], 0xff); // untouched
+
+  // exactly enough room for the string plus its NUL
+  mem.fill(0xff, dst, dst + 10);
+  assert.equal(libc.strxfrm(dst, putStr(2100, "abc"), 4), 3);
+  assert.equal(getStr(dst), "abc");
+});
+
+test("strtok splits on delimiters across calls", () => {
+  const s = putStr(2000, "a,bb,,ccc");
+  const delim = putStr(2100, ",");
+  const read = (p) => getStr(p);
+
+  let t = libc.strtok(s, delim);
+  assert.equal(read(t), "a");
+  t = libc.strtok(0, delim);
+  assert.equal(read(t), "bb");
+  t = libc.strtok(0, delim); // empty field between the two commas is skipped
+  assert.equal(read(t), "ccc");
+  assert.equal(libc.strtok(0, delim), 0); // no more tokens
+  assert.equal(libc.strtok(0, delim), 0); // stays NULL
+});
+
+test("strtok skips leading delimiters and handles multiple delimiters", () => {
+  const s = putStr(2000, "  hello world  ");
+  const delim = putStr(2100, " ");
+  assert.equal(getStr(libc.strtok(s, delim)), "hello");
+  assert.equal(getStr(libc.strtok(0, delim)), "world");
+  assert.equal(libc.strtok(0, delim), 0);
+
+  // a string of only delimiters yields no tokens
+  assert.equal(libc.strtok(putStr(2000, ",,,"), putStr(2100, ",")), 0);
+});
+
 // ---------------------------------------------------------------------------
 // Unimplemented stubs
 //
@@ -355,8 +399,6 @@ const STUBS = {
   strtod: [0],
   strtol: [0, 0],
   // string.h (still unimplemented)
-  strxfrm: [0, 0, 0],
-  strtok: [0, 0],
   strerror: [0],
 };
 

@@ -7,6 +7,10 @@
   (global $ERANGE i32 (i32.const 2))
   (global $NULL i32 (i32.const 0))
 
+  ;; Saved scan position for $strtok across successive calls. Like the C
+  ;; standard's strtok, this is process-global state and is not reentrant.
+  (global $strtok_save (mut i32) (i32.const 0))
+
   ;; assert.h
   ;; Ignores NDEBUG
   (func $assert (param $condition i32)
@@ -591,8 +595,22 @@
   )
 
   ;; size_t strxfrm(char *dst, const char *src, size_t n)
+  ;; Transforms src for locale-aware comparison and stores up to n bytes
+  ;; (including the NUL) in dst, returning strlen(src). In the ASCII "C" locale
+  ;; this library targets the transform is the identity, so this is a length-
+  ;; returning copy. Per the C spec, when the return value is >= n the contents
+  ;; of dst are indeterminate; here we still copy n bytes in that case.
   (func $strxfrm (param $dst i32) (param $src i32) (param $n i32) (result i32)
-    (unreachable)
+    (local $len i32)
+    (local.set $len (call $strlen (local.get $src)))
+    (if (i32.gt_u (local.get $n) (local.get $len)) (then
+      ;; room for the whole string plus its terminating NUL
+      (drop (call $memcpy (local.get $dst) (local.get $src) (i32.add (local.get $len) (i32.const 1))))
+    ) (else (if (local.get $n) (then
+      ;; not enough room: copy n bytes (no guaranteed NUL, per the spec)
+      (drop (call $memcpy (local.get $dst) (local.get $src) (local.get $n)))
+    ))))
+    (local.get $len)
   )
 
   ;; char *strchr(const char *s, int c)
@@ -719,8 +737,35 @@
   )
 
   ;; char *strtok(char *str, const char *delim)
+  ;; Splits a string into tokens delimited by any byte in delim. The first call
+  ;; passes the string; subsequent calls pass NULL to continue from the saved
+  ;; position (see $strtok_save). Writes a NUL over the delimiter ending each
+  ;; token and returns the token, or NULL when none remain.
   (func $strtok (param $str i32) (param $delim i32) (result i32)
-    (unreachable)
+    (local $token i32)
+    ;; NULL str resumes from where the previous call left off
+    (if (i32.eqz (local.get $str)) (then
+      (local.set $str (global.get $strtok_save))
+    ))
+    ;; skip any leading delimiters
+    (local.set $str (i32.add (local.get $str) (call $strspn (local.get $str) (local.get $delim))))
+    ;; nothing left but the terminating NUL: no more tokens
+    (if (i32.eqz (i32.load8_u (local.get $str))) (then
+      (global.set $strtok_save (local.get $str))
+      (return (i32.const 0))
+    ))
+    (local.set $token (local.get $str))
+    ;; advance to the first delimiter (or the terminating NUL)
+    (local.set $str (i32.add (local.get $str) (call $strcspn (local.get $str) (local.get $delim))))
+    (if (i32.load8_u (local.get $str)) (then
+      ;; terminate this token and remember the byte after it
+      (i32.store8 (local.get $str) (i32.const 0))
+      (global.set $strtok_save (i32.add (local.get $str) (i32.const 1)))
+    ) (else
+      ;; token runs to the end of the string
+      (global.set $strtok_save (local.get $str))
+    ))
+    (local.get $token)
   )
 
   ;; char *strerror(int errnum)
@@ -795,8 +840,8 @@
   (export "strcspn" (func $strcspn))
   (export "strpbrk" (func $strpbrk))
   (export "strstr" (func $strstr))
-  ;; Stubs (correct signature, traps until implemented)
   (export "strxfrm" (func $strxfrm))
   (export "strtok" (func $strtok))
+  ;; Stubs (correct signature, traps until implemented)
   (export "strerror" (func $strerror))
 )
