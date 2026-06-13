@@ -289,6 +289,50 @@ test("strncat appends at most n bytes and always terminates", () => {
   assert.equal(getStr(dst), "foox");
 });
 
+test("strchr finds first occurrence, NUL, or returns NULL", () => {
+  const s = putStr(2000, "hello");
+  assert.equal(libc.strchr(s, C("l")), s + 2); // first 'l'
+  assert.equal(libc.strchr(s, C("h")), s);
+  assert.equal(libc.strchr(s, C("z")), 0); // absent
+  assert.equal(libc.strchr(s, 0), s + 5); // matches terminating NUL
+});
+
+test("strrchr finds last occurrence, NUL, or returns NULL", () => {
+  const s = putStr(2000, "hello");
+  assert.equal(libc.strrchr(s, C("l")), s + 3); // last 'l'
+  assert.equal(libc.strrchr(s, C("o")), s + 4);
+  assert.equal(libc.strrchr(s, C("z")), 0); // absent
+  assert.equal(libc.strrchr(s, 0), s + 5); // matches terminating NUL
+});
+
+test("strspn measures the accepted prefix", () => {
+  assert.equal(libc.strspn(putStr(2000, "aabbcc"), putStr(2100, "ab")), 4);
+  assert.equal(libc.strspn(putStr(2000, "xyz"), putStr(2100, "ab")), 0);
+  assert.equal(libc.strspn(putStr(2000, "abc"), putStr(2100, "abc")), 3);
+});
+
+test("strcspn measures the rejected-free prefix", () => {
+  assert.equal(libc.strcspn(putStr(2000, "hello,world"), putStr(2100, ",")), 5);
+  assert.equal(libc.strcspn(putStr(2000, "hello"), putStr(2100, "xyz")), 5); // no reject hit
+  assert.equal(libc.strcspn(putStr(2000, ",abc"), putStr(2100, ",")), 0);
+});
+
+test("strpbrk finds the first byte from the set, or NULL", () => {
+  const s = putStr(2000, "hello,world");
+  assert.equal(libc.strpbrk(s, putStr(2100, ",;")), s + 5);
+  assert.equal(libc.strpbrk(putStr(2000, "hello"), putStr(2100, "xyz")), 0);
+});
+
+test("strstr finds substring, handles empty needle, or NULL", () => {
+  const s = putStr(2000, "hello world");
+  assert.equal(libc.strstr(s, putStr(2100, "world")), s + 6);
+  assert.equal(libc.strstr(s, putStr(2100, "hello")), s);
+  assert.equal(libc.strstr(s, putStr(2100, "")), s); // empty needle -> haystack
+  assert.equal(libc.strstr(s, putStr(2100, "xyz")), 0); // absent
+  // partial-then-fail must not produce a false match
+  assert.equal(libc.strstr(putStr(2000, "abcabd"), putStr(2100, "abd")), 2003);
+});
+
 // ---------------------------------------------------------------------------
 // Unimplemented stubs
 //
@@ -312,12 +356,6 @@ const STUBS = {
   strtol: [0, 0],
   // string.h (still unimplemented)
   strxfrm: [0, 0, 0],
-  strchr: [0, 0],
-  strcspn: [0, 0],
-  strpbrk: [0, 0],
-  strrchr: [0, 0],
-  strspn: [0, 0],
-  strstr: [0, 0],
   strtok: [0, 0],
   strerror: [0],
 };

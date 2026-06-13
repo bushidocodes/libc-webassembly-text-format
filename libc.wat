@@ -596,33 +596,126 @@
   )
 
   ;; char *strchr(const char *s, int c)
+  ;; Returns a pointer to the first occurrence of c (as an unsigned char) in s,
+  ;; or NULL if absent. A search for '\0' matches the terminating NUL.
   (func $strchr (param $s i32) (param $c i32) (result i32)
+    (local $ch i32)
+    (local.set $c (i32.and (local.get $c) (i32.const 0xff)))
+    (loop $loop
+      (local.set $ch (i32.load8_u (local.get $s)))
+      ;; match first, so a search for '\0' returns the terminating NUL
+      (if (i32.eq (local.get $ch) (local.get $c)) (then (return (local.get $s))))
+      (if (i32.eqz (local.get $ch)) (then (return (i32.const 0)))) ;; end of s, not found
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $loop)
+    )
     (unreachable)
   )
 
   ;; size_t strcspn(const char *s, const char *reject)
+  ;; Length of the initial run of s containing no bytes from reject.
   (func $strcspn (param $s i32) (param $reject i32) (result i32)
-    (unreachable)
+    (local $cursor i32)
+    (local $c i32)
+    (local.set $cursor (local.get $s))
+    (block $done
+      (loop $loop
+        (local.set $c (i32.load8_u (local.get $cursor)))
+        (br_if $done (i32.eqz (local.get $c)))                            ;; end of s
+        (br_if $done (call $strchr (local.get $reject) (local.get $c)))   ;; c is in reject
+        (local.set $cursor (i32.add (local.get $cursor) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (i32.sub (local.get $cursor) (local.get $s))
   )
 
   ;; char *strpbrk(const char *s, const char *accept)
+  ;; Returns a pointer to the first byte of s that is in accept, or NULL.
   (func $strpbrk (param $s i32) (param $accept i32) (result i32)
-    (unreachable)
+    (local $c i32)
+    (block $done
+      (loop $loop
+        (local.set $c (i32.load8_u (local.get $s)))
+        (br_if $done (i32.eqz (local.get $c)))                       ;; end of s, no match
+        (if (call $strchr (local.get $accept) (local.get $c)) (then
+          (return (local.get $s))
+        ))
+        (local.set $s (i32.add (local.get $s) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (i32.const 0)
   )
 
   ;; char *strrchr(const char *s, int c)
+  ;; Returns a pointer to the last occurrence of c (as an unsigned char) in s,
+  ;; or NULL. A search for '\0' matches the terminating NUL.
   (func $strrchr (param $s i32) (param $c i32) (result i32)
-    (unreachable)
+    (local $ch i32)
+    (local $last i32)
+    (local.set $c (i32.and (local.get $c) (i32.const 0xff)))
+    (local.set $last (i32.const 0))
+    (loop $loop
+      (local.set $ch (i32.load8_u (local.get $s)))
+      (if (i32.eq (local.get $ch) (local.get $c)) (then (local.set $last (local.get $s))))
+      (if (local.get $ch) (then ;; not yet at the NUL: keep scanning
+        (local.set $s (i32.add (local.get $s) (i32.const 1)))
+        (br $loop)
+      ))
+    )
+    (local.get $last)
   )
 
   ;; size_t strspn(const char *s, const char *accept)
+  ;; Length of the initial run of s consisting entirely of bytes from accept.
   (func $strspn (param $s i32) (param $accept i32) (result i32)
-    (unreachable)
+    (local $cursor i32)
+    (local $c i32)
+    (local.set $cursor (local.get $s))
+    (block $done
+      (loop $loop
+        (local.set $c (i32.load8_u (local.get $cursor)))
+        (br_if $done (i32.eqz (local.get $c)))                             ;; end of s
+        (br_if $done (i32.eqz (call $strchr (local.get $accept) (local.get $c)))) ;; c not in accept
+        (local.set $cursor (i32.add (local.get $cursor) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (i32.sub (local.get $cursor) (local.get $s))
   )
 
   ;; char *strstr(const char *haystack, const char *needle)
+  ;; Returns a pointer to the first occurrence of needle in haystack, or NULL.
+  ;; An empty needle matches at the start of haystack. (Naive O(n*m) scan.)
   (func $strstr (param $haystack i32) (param $needle i32) (result i32)
-    (unreachable)
+    (local $h i32)
+    (local $n i32)
+    (local $hc i32)
+    (local $nc i32)
+    (if (i32.eqz (i32.load8_u (local.get $needle))) (then (return (local.get $haystack))))
+    (block $notfound
+      (loop $outer
+        (br_if $notfound (i32.eqz (i32.load8_u (local.get $haystack)))) ;; haystack exhausted
+        (local.set $h (local.get $haystack))
+        (local.set $n (local.get $needle))
+        (block $mismatch
+          (loop $inner
+            (local.set $nc (i32.load8_u (local.get $n)))
+            (if (i32.eqz (local.get $nc)) (then (return (local.get $haystack)))) ;; full match
+            (local.set $hc (i32.load8_u (local.get $h)))
+            ;; differs (also catches haystack end, since hc==0 != nc)
+            (br_if $mismatch (i32.ne (local.get $hc) (local.get $nc)))
+            (local.set $h (i32.add (local.get $h) (i32.const 1)))
+            (local.set $n (i32.add (local.get $n) (i32.const 1)))
+            (br $inner)
+          )
+        )
+        (local.set $haystack (i32.add (local.get $haystack) (i32.const 1)))
+        (br $outer)
+      )
+    )
+    (i32.const 0)
   )
 
   ;; char *strtok(char *str, const char *delim)
@@ -696,14 +789,14 @@
   (export "strcmp" (func $strcmp))
   (export "strcoll" (func $strcoll))
   (export "strncmp" (func $strncmp))
-  ;; Stubs (correct signature, traps until implemented)
-  (export "strxfrm" (func $strxfrm))
   (export "strchr" (func $strchr))
-  (export "strcspn" (func $strcspn))
-  (export "strpbrk" (func $strpbrk))
   (export "strrchr" (func $strrchr))
   (export "strspn" (func $strspn))
+  (export "strcspn" (func $strcspn))
+  (export "strpbrk" (func $strpbrk))
   (export "strstr" (func $strstr))
+  ;; Stubs (correct signature, traps until implemented)
+  (export "strxfrm" (func $strxfrm))
   (export "strtok" (func $strtok))
   (export "strerror" (func $strerror))
 )
