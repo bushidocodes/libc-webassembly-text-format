@@ -445,43 +445,149 @@
   )
 
   ;; char *strcpy(char *dst, const char *src)
+  ;; Copies src (including its terminating NUL) into dst and returns dst.
   (func $strcpy (param $dst i32) (param $src i32) (result i32)
-    (unreachable)
+    (local $d i32)
+    (local $c i32)
+    (local.set $d (local.get $dst))
+    (loop $loop
+      (local.set $c (i32.load8_u (local.get $src)))
+      (i32.store8 (local.get $d) (local.get $c))
+      (local.set $src (i32.add (local.get $src) (i32.const 1)))
+      (local.set $d (i32.add (local.get $d) (i32.const 1)))
+      (br_if $loop (local.get $c)) ;; continue until the NUL has been copied
+    )
+    (local.get $dst)
   )
 
   ;; char *strncpy(char *dst, const char *src, size_t n)
+  ;; Copies at most n bytes from src into dst. If src is shorter than n, the
+  ;; remainder of dst is padded with NULs; if src is n bytes or longer, no
+  ;; terminating NUL is written. Returns dst.
   (func $strncpy (param $dst i32) (param $src i32) (param $n i32) (result i32)
-    (unreachable)
+    (local $d i32)
+    (local $c i32)
+    (local.set $d (local.get $dst))
+    (block $done
+      (loop $loop
+        (br_if $done (i32.eqz (local.get $n)))
+        (local.set $c (i32.load8_u (local.get $src)))
+        (i32.store8 (local.get $d) (local.get $c))
+        (local.set $d (i32.add (local.get $d) (i32.const 1)))
+        (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+        (if (i32.eqz (local.get $c)) (then
+          ;; reached the end of src: pad the rest of dst with NULs
+          (drop (call $memset (local.get $d) (i32.const 0) (local.get $n)))
+          (br $done)
+        ))
+        (local.set $src (i32.add (local.get $src) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (local.get $dst)
   )
 
   ;; char *strcat(char *dst, const char *src)
+  ;; Appends src to the end of the string in dst and returns dst.
   (func $strcat (param $dst i32) (param $src i32) (result i32)
-    (unreachable)
+    (drop (call $strcpy
+      (i32.add (local.get $dst) (call $strlen (local.get $dst)))
+      (local.get $src)
+    ))
+    (local.get $dst)
   )
 
   ;; char *strncat(char *dst, const char *src, size_t n)
+  ;; Appends at most n bytes from src to the end of the string in dst, then
+  ;; always writes a terminating NUL. Returns dst.
   (func $strncat (param $dst i32) (param $src i32) (param $n i32) (result i32)
-    (unreachable)
+    (local $d i32)
+    (local $c i32)
+    (local.set $d (i32.add (local.get $dst) (call $strlen (local.get $dst))))
+    (block $done
+      (loop $loop
+        (br_if $done (i32.eqz (local.get $n)))
+        (local.set $c (i32.load8_u (local.get $src)))
+        (br_if $done (i32.eqz (local.get $c))) ;; stop at end of src
+        (i32.store8 (local.get $d) (local.get $c))
+        (local.set $d (i32.add (local.get $d) (i32.const 1)))
+        (local.set $src (i32.add (local.get $src) (i32.const 1)))
+        (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (i32.store8 (local.get $d) (i32.const 0))
+    (local.get $dst)
   )
 
   ;; size_t strlen(const char *s)
   (func $strlen (param $s i32) (result i32)
-    (unreachable)
+    (local $cursor i32)
+    (local.set $cursor (local.get $s))
+    (block $done
+      (loop $loop
+        (br_if $done (i32.eqz (i32.load8_u (local.get $cursor))))
+        (local.set $cursor (i32.add (local.get $cursor) (i32.const 1)))
+        (br $loop)
+      )
+    )
+    (i32.sub (local.get $cursor) (local.get $s))
   )
 
   ;; int strcmp(const char *s1, const char *s2)
+  ;; Returns -1, 0, or 1 (matching $memcmp's convention) according to whether
+  ;; s1 sorts before, equal to, or after s2 by unsigned byte comparison.
   (func $strcmp (param $s1 i32) (param $s2 i32) (result i32)
+    (local $c1 i32)
+    (local $c2 i32)
+    (loop $loop
+      (local.set $c1 (i32.load8_u (local.get $s1)))
+      (local.set $c2 (i32.load8_u (local.get $s2)))
+      (if (i32.ne (local.get $c1) (local.get $c2)) (then
+        (return (if (result i32) (i32.lt_u (local.get $c1) (local.get $c2))
+          (then (i32.const -1))
+          (else (i32.const 1))
+        ))
+      ))
+      ;; bytes are equal here; if they are both NUL the strings fully match
+      (if (i32.eqz (local.get $c1)) (then (return (i32.const 0))))
+      (local.set $s1 (i32.add (local.get $s1) (i32.const 1)))
+      (local.set $s2 (i32.add (local.get $s2) (i32.const 1)))
+      (br $loop)
+    )
     (unreachable)
   )
 
   ;; int strcoll(const char *s1, const char *s2)
+  ;; In the ASCII "C" locale this library targets, collation order is plain
+  ;; byte order, so strcoll is equivalent to strcmp.
   (func $strcoll (param $s1 i32) (param $s2 i32) (result i32)
-    (unreachable)
+    (call $strcmp (local.get $s1) (local.get $s2))
   )
 
   ;; int strncmp(const char *s1, const char *s2, size_t n)
+  ;; Like strcmp but compares at most n bytes. Returns -1, 0, or 1.
   (func $strncmp (param $s1 i32) (param $s2 i32) (param $n i32) (result i32)
-    (unreachable)
+    (local $c1 i32)
+    (local $c2 i32)
+    (block $done
+      (br_if $done (i32.eqz (local.get $n)))
+      (loop $loop
+        (local.set $c1 (i32.load8_u (local.get $s1)))
+        (local.set $c2 (i32.load8_u (local.get $s2)))
+        (if (i32.ne (local.get $c1) (local.get $c2)) (then
+          (return (if (result i32) (i32.lt_u (local.get $c1) (local.get $c2))
+            (then (i32.const -1))
+            (else (i32.const 1))
+          ))
+        ))
+        (if (i32.eqz (local.get $c1)) (then (return (i32.const 0))))
+        (local.set $s1 (i32.add (local.get $s1) (i32.const 1)))
+        (local.set $s2 (i32.add (local.get $s2) (i32.const 1)))
+        (br_if $loop (i32.gt_u (local.tee $n (i32.sub (local.get $n) (i32.const 1))) (i32.const 0)))
+      )
+    )
+    (i32.const 0)
   )
 
   ;; size_t strxfrm(char *dst, const char *src, size_t n)
@@ -582,7 +688,6 @@
   (export "memchr" (func $memchr))
   (export "memset" (func $memset))
   (export "memcmp" (func $memcmp))
-  ;; Stubs (correct signature, traps until implemented)
   (export "strcpy" (func $strcpy))
   (export "strncpy" (func $strncpy))
   (export "strcat" (func $strcat))
@@ -591,6 +696,7 @@
   (export "strcmp" (func $strcmp))
   (export "strcoll" (func $strcoll))
   (export "strncmp" (func $strncmp))
+  ;; Stubs (correct signature, traps until implemented)
   (export "strxfrm" (func $strxfrm))
   (export "strchr" (func $strchr))
   (export "strcspn" (func $strcspn))

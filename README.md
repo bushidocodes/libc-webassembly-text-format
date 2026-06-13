@@ -91,17 +91,17 @@ All functions assume ASCII locale.
 | `memcpy` | Implemented (delegates to `memmove`) |
 | `memmove` | Implemented (native `memory.copy`) |
 | `memset` | Implemented (native `memory.fill`) |
-| `strcat` | Stub |
+| `strcat` | Implemented |
 | `strchr` | Stub |
-| `strcmp` | Stub |
-| `strcoll` | Stub |
-| `strcpy` | Stub |
+| `strcmp` | Implemented (returns `-1`/`0`/`1`) |
+| `strcoll` | Implemented (ASCII locale; aliases `strcmp`) |
+| `strcpy` | Implemented |
 | `strcspn` | Stub |
 | `strerror` | Stub |
-| `strlen` | Stub |
-| `strncat` | Stub |
-| `strncmp` | Stub |
-| `strncpy` | Stub |
+| `strlen` | Implemented |
+| `strncat` | Implemented |
+| `strncmp` | Implemented (returns `-1`/`0`/`1`) |
+| `strncpy` | Implemented |
 | `strpbrk` | Stub |
 | `strrchr` | Stub |
 | `strspn` | Stub |
