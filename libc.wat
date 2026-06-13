@@ -383,8 +383,11 @@
   )
 
   ;; double atof(const char *nptr)
+  ;; Equivalent to strtod(nptr, NULL): the parsed value, discarding the endptr.
   (func $atof (param $nptr i32) (result f64)
-    (unreachable)
+    (local $end i32)
+    ;; strtod leaves (value, endptr) on the stack; capture endptr, keep value
+    (local.set $end (call $strtod (local.get $nptr)))
   )
 
   ;; int atoi(const char *nptr)
@@ -429,9 +432,131 @@
   )
 
   ;; double strtod(const char *nptr, char **endptr)
-  ;; Returns (value, endptr) in place of the char** out-param.
+  ;; Returns (value, endptr) in place of the char** out-param. Parses an optional
+  ;; sign, an integer and/or fractional part, and an optional decimal exponent
+  ;; (e/E). The mantissa is accumulated in f64 and scaled by a power of ten, so
+  ;; the result is accurate to within a few ULP rather than correctly rounded.
+  ;; Over/underflow yields +/-inf or 0 with $errno set to ERANGE. Hexadecimal
+  ;; floats and inf/nan spellings are not recognized. When no digits are
+  ;; converted the value is 0 and endptr equals nptr.
   (func $strtod (param $nptr i32) (result f64 i32)
-    (unreachable)
+    (local $s i32)          ;; scan cursor
+    (local $c i32)          ;; current byte
+    (local $neg i32)
+    (local $any i32)        ;; saw at least one mantissa digit
+    (local $value f64)      ;; mantissa
+    (local $expo i32)       ;; decimal exponent (fraction digits + explicit exp)
+    (local $p i32)          ;; lookahead cursor for the exponent field
+    (local $expNeg i32)
+    (local $expVal i32)
+    (local $expDigits i32)
+    (local $scale f64)
+    (local $nonzero i32)    ;; mantissa was nonzero (to detect underflow)
+    (local.set $s (local.get $nptr))
+    (local.set $value (f64.const 0))
+
+    ;; leading whitespace
+    (block $ws_done (loop $ws
+      (br_if $ws_done (i32.eqz (call $isspace (i32.load8_u (local.get $s)))))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $ws)
+    ))
+
+    ;; optional sign
+    (local.set $c (i32.load8_u (local.get $s)))
+    (if (i32.eq (local.get $c) (i32.const 45)) (then ;; '-'
+      (local.set $neg (i32.const 1))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+    ) (else (if (i32.eq (local.get $c) (i32.const 43)) (then ;; '+'
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+    ))))
+
+    ;; integer-part digits
+    (block $int_done (loop $int
+      (local.set $c (i32.load8_u (local.get $s)))
+      (br_if $int_done (i32.eqz (call $isdigit (local.get $c))))
+      (local.set $value (f64.add (f64.mul (local.get $value) (f64.const 10))
+        (f64.convert_i32_u (i32.sub (local.get $c) (i32.const 48)))))
+      (local.set $any (i32.const 1))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $int)
+    ))
+
+    ;; optional fractional part
+    (if (i32.eq (i32.load8_u (local.get $s)) (i32.const 46)) (then ;; '.'
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (block $frac_done (loop $frac
+        (local.set $c (i32.load8_u (local.get $s)))
+        (br_if $frac_done (i32.eqz (call $isdigit (local.get $c))))
+        (local.set $value (f64.add (f64.mul (local.get $value) (f64.const 10))
+          (f64.convert_i32_u (i32.sub (local.get $c) (i32.const 48)))))
+        (local.set $expo (i32.sub (local.get $expo) (i32.const 1)))
+        (local.set $any (i32.const 1))
+        (local.set $s (i32.add (local.get $s) (i32.const 1)))
+        (br $frac)
+      ))
+    ))
+
+    ;; no mantissa digits at all: no conversion
+    (if (i32.eqz (local.get $any)) (then
+      (return (f64.const 0) (local.get $nptr))
+    ))
+
+    ;; optional exponent: only consumed if e/E is followed by (sign and) a digit
+    (local.set $c (i32.load8_u (local.get $s)))
+    (if (i32.or (i32.eq (local.get $c) (i32.const 101)) (i32.eq (local.get $c) (i32.const 69))) (then ;; 'e'/'E'
+      (local.set $p (i32.add (local.get $s) (i32.const 1)))
+      (local.set $c (i32.load8_u (local.get $p)))
+      (if (i32.eq (local.get $c) (i32.const 45)) (then ;; '-'
+        (local.set $expNeg (i32.const 1))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+      ) (else (if (i32.eq (local.get $c) (i32.const 43)) (then ;; '+'
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+      ))))
+      (block $exp_done (loop $exp
+        (local.set $c (i32.load8_u (local.get $p)))
+        (br_if $exp_done (i32.eqz (call $isdigit (local.get $c))))
+        (local.set $expVal (i32.add (i32.mul (local.get $expVal) (i32.const 10))
+          (i32.sub (local.get $c) (i32.const 48))))
+        (local.set $expDigits (i32.const 1))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $exp)
+      ))
+      (if (local.get $expDigits) (then ;; commit the exponent field
+        (if (local.get $expNeg) (then (local.set $expVal (i32.sub (i32.const 0) (local.get $expVal)))))
+        (local.set $expo (i32.add (local.get $expo) (local.get $expVal)))
+        (local.set $s (local.get $p))
+      ))
+    ))
+
+    ;; scale the mantissa by 10^expo (computed by repeated multiplication)
+    (local.set $nonzero (f64.ne (local.get $value) (f64.const 0)))
+    (local.set $scale (f64.const 1))
+    (local.set $expVal (if (result i32) (i32.lt_s (local.get $expo) (i32.const 0))
+      (then (i32.sub (i32.const 0) (local.get $expo)))
+      (else (local.get $expo))))
+    (block $pow_done (loop $pow
+      (br_if $pow_done (i32.eqz (local.get $expVal)))
+      (local.set $scale (f64.mul (local.get $scale) (f64.const 10)))
+      (local.set $expVal (i32.sub (local.get $expVal) (i32.const 1)))
+      (br $pow)
+    ))
+    (local.set $value (if (result f64) (i32.lt_s (local.get $expo) (i32.const 0))
+      (then (f64.div (local.get $value) (local.get $scale)))
+      (else (f64.mul (local.get $value) (local.get $scale)))))
+
+    ;; ERANGE on overflow (result became infinite) or underflow (a nonzero
+    ;; mantissa scaled all the way to zero)
+    (if (i32.or
+          (f64.eq (f64.abs (local.get $value)) (f64.const inf))
+          (i32.and (local.get $nonzero) (f64.eq (local.get $value) (f64.const 0)))
+        ) (then
+      (global.set $errno (global.get $ERANGE))
+    ))
+
+    (if (local.get $neg) (then (local.set $value (f64.neg (local.get $value)))))
+    (local.get $value)
+    (local.get $s)
   )
 
   ;; long strtol(const char *nptr, char **endptr, int base)
@@ -996,11 +1121,11 @@
   (export "rand" (func $rand))
   (export "srand" (func $srand))
   (export "strtol" (func $strtol))
+  (export "strtod" (func $strtod))
+  (export "atof" (func $atof))
   ;; Stubs (correct signature, traps until implemented)
   (export "bsearch" (func $bsearch))
   (export "qsort" (func $qsort))
-  (export "atof" (func $atof))
-  (export "strtod" (func $strtod))
 
   ;; string.h
   (export "memcpy" (func $memcpy))

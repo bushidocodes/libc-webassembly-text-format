@@ -73,13 +73,13 @@ All functions assume ASCII locale.
 | `labs` | Implemented | |
 | `ldiv` | Implemented | Returns `(quotient, remainder)` tuple |
 | `itoa_s` | Implemented | Decimal only; returns `(base_address, length)` tuple |
-| `atof` | Stub | |
+| `atof` | Implemented | Wraps `strtod` |
 | `atoi` | Implemented | Skips leading whitespace; optional sign; overflow wraps |
 | `bsearch` | Stub | |
 | `qsort` | Stub | |
 | `rand` | Implemented | C reference LCG; `RAND_MAX` is 32767 |
 | `srand` | Implemented | Seeds `rand` |
-| `strtod` | Stub | |
+| `strtod` | Implemented | Decimal floats + exponent; accurate to a few ULP (not correctly rounded); `ERANGE` on over/underflow; returns `(value, endptr)` |
 | `strtol` | Implemented | Base 0/2–36, `0x` prefix, overflow clamps + sets `ERANGE`; returns `(value, endptr)` |
 
 ### string.h
