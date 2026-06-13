@@ -75,8 +75,8 @@ All functions assume ASCII locale.
 | `itoa_s` | Implemented | Decimal only; returns `(base_address, length)` tuple |
 | `atof` | Implemented | Wraps `strtod` |
 | `atoi` | Implemented | Skips leading whitespace; optional sign; overflow wraps |
-| `bsearch` | Stub | |
-| `qsort` | Stub | |
+| `bsearch` | Implemented | Comparator via the exported function table (see below) |
+| `qsort` | Implemented | Selection sort; comparator via the exported function table (see below) |
 | `rand` | Implemented | C reference LCG; `RAND_MAX` is 32767 |
 | `srand` | Implemented | Seeds `rand` |
 | `strtod` | Implemented | Decimal floats + exponent; accurate to a few ULP (not correctly rounded); `ERANGE` on over/underflow; returns `(value, endptr)` |
@@ -141,6 +141,36 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 
 `$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2). All three are exported (`errno`, `EDOM`, `ERANGE`) so a host can clear `errno` before a call and inspect it afterward — for example, `strtol` sets it to `ERANGE` on overflow. `strtok` likewise keeps its scan position in a mutable global (`$strtok_save`), so — exactly like the C standard's `strtok` — it is stateful and not reentrant.
 
+### Comparators for `bsearch` / `qsort`
+
+C passes `bsearch`/`qsort` a comparator *function pointer*. WebAssembly can only
+call an arbitrary caller-supplied function through a function table via
+`call_indirect`, so the library exports its table as `__indirect_function_table`
+and the `compar` argument is the **table slot index** of the comparator (not a
+code pointer).
+
+A host installs its comparator into that table and passes the slot index. The
+comparator must be a real WebAssembly function of type
+`(param i32 i32) (result i32)` that reads its two element pointers out of the
+shared linear memory. From JavaScript:
+
+```js
+const { instance } = await WebAssembly.instantiate(libcBytes);
+const libc = instance.exports;
+
+// A comparator is itself a wasm function that shares libc's memory.
+const cmp = await WebAssembly.instantiate(comparatorBytes, {
+  env: { memory: libc.memory },
+});
+
+libc.__indirect_function_table.set(0, cmp.exports.compare); // install at slot 0
+libc.qsort(base, nmemb, size, 0);                           // pass the slot index
+```
+
+The table has one slot by default; grow it (`table.grow`) to register more
+comparators. `qsort` is a simple selection sort (O(n²), not stable) — the C
+standard does not mandate an algorithm.
+
 ### Memory operations
 
 `memcpy` delegates to `memmove` because the WebAssembly `memory.copy` instruction handles overlapping regions correctly, so there is no behavioral difference between the two. `memset` uses `memory.fill` directly.
@@ -149,13 +179,12 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 
 ### Stubs
 
-Every function marked "Stub" above is declared with its correct C-compatible
-WAT signature and an `(unreachable)` body. This means it can be imported (or
-called) with the right type today — a consumer that imports, say, `strlen` as
-`(param i32) (result i32)` links successfully — and calling it traps at runtime
-rather than silently misbehaving. Following the conventions above, stub
-signatures use `i64` for C `long` (`strtol`) and multi-value returns for pointer
-out-parameters (`strtod`/`strtol` return `(value, endptr)`).
+Every function marked "Stub" above (the remaining `math.h` transcendentals and
+`toascii`) is declared with its correct C-compatible WAT signature and an
+`(unreachable)` body. This means it can be imported (or called) with the right
+type today — a consumer that imports, say, `acos` as `(param f64) (result f64)`
+links successfully — and calling it traps at runtime rather than silently
+misbehaving.
 
 ## Usage
 

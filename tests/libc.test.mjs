@@ -8,9 +8,29 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const wasmPath = fileURLToPath(new URL("../libc.wasm", import.meta.url));
+
+// Assemble a small WAT source to wasm bytes with wat2wasm (already required to
+// build libc.wasm). Used to build a comparator module for the qsort/bsearch
+// tests, since a funcref table slot must hold a real wasm function.
+const assemble = (watSource) => {
+  const dir = mkdtempSync(join(tmpdir(), "libc-test-"));
+  try {
+    const watFile = join(dir, "m.wat");
+    const wasmFile = join(dir, "m.wasm");
+    writeFileSync(watFile, watSource);
+    execFileSync("wat2wasm", [watFile, "-o", wasmFile]);
+    return readFileSync(wasmFile);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
 
 let libc;
 let mem;
@@ -279,6 +299,66 @@ test("atof equals strtod's value", () => {
   }
 });
 
+// qsort/bsearch take a caller-supplied comparator. The comparator must be a
+// real wasm function installed into the exported function table; it reads the
+// elements out of libc's shared linear memory. We build an ascending-i32
+// comparator in its own module, share libc's memory with it, and install it at
+// table slot 0.
+const COMPARATOR_WAT = `
+  (module
+    (import "env" "memory" (memory 0))
+    (func (export "cmp_i32") (param $a i32) (param $b i32) (result i32)
+      (i32.sub (i32.load (local.get $a)) (i32.load (local.get $b)))
+    )
+  )`;
+
+const installComparator = async () => {
+  const { instance } = await WebAssembly.instantiate(assemble(COMPARATOR_WAT), {
+    env: { memory: libc.memory },
+  });
+  libc.__indirect_function_table.set(0, instance.exports.cmp_i32);
+  return 0; // table index passed as the `compar` argument
+};
+
+test("qsort sorts an i32 array via the table comparator", async () => {
+  const compar = await installComparator();
+  const i32 = new Int32Array(libc.memory.buffer);
+  const base = 4000;
+  const input = [5, 3, 9, 1, 4, 2, 9, 0];
+  input.forEach((v, k) => (i32[(base >> 2) + k] = v));
+
+  libc.qsort(base, input.length, 4, compar);
+
+  const out = [];
+  for (let k = 0; k < input.length; k++) out.push(i32[(base >> 2) + k]);
+  assert.deepEqual(out, [...input].sort((a, b) => a - b));
+
+  // a single-element (and empty) array is a no-op, not a crash
+  libc.qsort(base, 1, 4, compar);
+  libc.qsort(base, 0, 4, compar);
+  assert.equal(i32[base >> 2], 0);
+});
+
+test("bsearch finds elements in a sorted array, or returns NULL", async () => {
+  const compar = await installComparator();
+  const i32 = new Int32Array(libc.memory.buffer);
+  const base = 4000;
+  const sorted = [1, 3, 5, 7, 9, 11];
+  sorted.forEach((v, k) => (i32[(base >> 2) + k] = v));
+  const key = 5000;
+
+  for (let k = 0; k < sorted.length; k++) {
+    i32[key >> 2] = sorted[k];
+    const p = libc.bsearch(key, base, sorted.length, 4, compar);
+    assert.equal((p - base) / 4, k, `bsearch(${sorted[k]})`);
+  }
+
+  for (const absent of [0, 4, 12]) {
+    i32[key >> 2] = absent;
+    assert.equal(libc.bsearch(key, base, sorted.length, 4, compar), 0);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // math.h
 // ---------------------------------------------------------------------------
@@ -508,26 +588,3 @@ test("strerror returns a message for each known errno", () => {
   assert.equal(getStr(libc.strerror(999)), "Unknown error");
 });
 
-// ---------------------------------------------------------------------------
-// Unimplemented stubs
-//
-// Each stub must be exported with a real (typed) signature and an (unreachable)
-// body — so consumers can link against it with the correct C-compatible type
-// today, and calling it traps rather than silently returning. A regression to a
-// bare `(func $name)` would either drop the export or stop trapping, which these
-// assertions catch. Args are the function's arity (values are irrelevant since
-// the body traps immediately).
-// ---------------------------------------------------------------------------
-
-const STUBS = {
-  // stdlib.h
-  bsearch: [0, 0, 0, 0, 0],
-  qsort: [0, 0, 0, 0],
-};
-
-for (const [name, args] of Object.entries(STUBS)) {
-  test(`stub ${name} is exported and traps`, () => {
-    assert.equal(typeof libc[name], "function", `${name} is not exported`);
-    assert.throws(() => libc[name](...args), WebAssembly.RuntimeError);
-  });
-}
