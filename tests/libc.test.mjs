@@ -371,6 +371,61 @@ test("sqrt / ceil / fabs / floor", () => {
   assert.equal(libc.fabs(3.5), 3.5);
 });
 
+// helper: assert two doubles are bit-identical (so NaN === NaN, +0 !== -0)
+const eqf = (got, exp, msg) => assert.ok(Object.is(got, exp), `${msg}: got ${got}, want ${exp}`);
+
+test("fmod matches IEEE remainder (the JS % operator)", () => {
+  for (const [x, y] of [[5.3, 2], [-5.3, 2], [5.3, -2], [1e9 + 0.5, 3],
+                        [7, 7], [2, 5], [0, 5]]) {
+    eqf(libc.fmod(x, y), x % y, `fmod(${x}, ${y})`);
+  }
+  // exact for a large quotient (the naive x - trunc(x/y)*y would not be)
+  eqf(libc.fmod(1e16 + 1, 3), (1e16 + 1) % 3, "fmod large");
+  // edge cases -> NaN, or x passed through
+  assert.ok(Number.isNaN(libc.fmod(5, 0)));
+  assert.ok(Number.isNaN(libc.fmod(Infinity, 2)));
+  assert.ok(Number.isNaN(libc.fmod(NaN, 1)));
+  eqf(libc.fmod(3, Infinity), 3, "fmod(x, inf)");
+});
+
+test("modf splits into integral and fractional parts", () => {
+  for (const v of [3.75, -3.75, 5, 0]) {
+    const [ip, fp] = libc.modf(v);
+    eqf(ip, Math.trunc(v), `modf int ${v}`);
+    eqf(fp, v - Math.trunc(v), `modf frac ${v}`);
+  }
+  // infinities: integral is +/-inf, fractional is signed zero
+  assert.deepEqual(libc.modf(Infinity), [Infinity, 0]);
+  eqf(libc.modf(-Infinity)[1], -0, "modf(-inf) frac");
+});
+
+test("frexp returns a normalized fraction and exponent", () => {
+  for (const v of [1, 0.5, 8, -8, 123.456, 1e300,
+                   5e-324 /* min subnormal */, 2.2250738585072014e-308]) {
+    const [e, m] = libc.frexp(v);
+    eqf(m * 2 ** e, v, `frexp reconstruct ${v}`); // x == m * 2^e exactly
+    assert.ok(Math.abs(m) >= 0.5 && Math.abs(m) < 1, `frexp range ${v}: ${m}`);
+  }
+  assert.deepEqual(libc.frexp(0), [0, 0]); // zero -> (0, 0)
+});
+
+test("ldexp computes x * 2^exp with over/underflow", () => {
+  for (const [x, n] of [[1, 3], [1, -3], [3, 10], [1.5, 100], [0, 5]]) {
+    eqf(libc.ldexp(x, n), x * 2 ** n, `ldexp(${x}, ${n})`);
+  }
+  eqf(libc.ldexp(1, 2000), Infinity, "ldexp overflow"); // overflow -> inf
+  eqf(libc.ldexp(1, -2000), 0, "ldexp underflow"); // underflow -> 0
+  // frexp and ldexp are inverses
+  const [e, m] = libc.frexp(123.456);
+  eqf(libc.ldexp(m, e), 123.456, "ldexp(frexp(x))");
+});
+
+test("toascii masks to 7 bits", () => {
+  assert.equal(libc.toascii(0x41), 0x41);
+  assert.equal(libc.toascii(200), 200 & 0x7f);
+  assert.equal(libc.toascii(0xff), 0x7f);
+});
+
 // ---------------------------------------------------------------------------
 // string.h
 // ---------------------------------------------------------------------------
