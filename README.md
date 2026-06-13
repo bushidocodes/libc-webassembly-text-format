@@ -97,7 +97,7 @@ All functions assume ASCII locale.
 | `strcoll` | Implemented (ASCII locale; aliases `strcmp`) |
 | `strcpy` | Implemented |
 | `strcspn` | Implemented |
-| `strerror` | Stub |
+| `strerror` | Implemented (`EDOM`/`ERANGE` messages) |
 | `strlen` | Implemented |
 | `strncat` | Implemented |
 | `strncmp` | Implemented (returns `-1`/`0`/`1`) |
@@ -144,6 +144,8 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 ### Memory operations
 
 `memcpy` delegates to `memmove` because the WebAssembly `memory.copy` instruction handles overlapping regions correctly, so there is no behavioral difference between the two. `memset` uses `memory.fill` directly.
+
+`strerror` returns pointers into a small **reserved region of linear memory (bytes 16–255)** that is initialized from `(data ...)` segments with the error-message strings. A host that uses `strerror` must avoid overwriting that region; all other memory (including byte 0, treated as `NULL`) is free for the host to use.
 
 ### Stubs
 
