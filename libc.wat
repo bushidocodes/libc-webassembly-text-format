@@ -244,16 +244,165 @@
     (unreachable)
   )
   
+  ;; sin(z) for the reduced argument z in [-pi/4, pi/4] (Cephes sincof series).
+  (func $__sin_series (param $z f64) (result f64)
+    (local $zz f64)
+    (local $p f64)
+    (local.set $zz (f64.mul (local.get $z) (local.get $z)))
+    (local.set $p (f64.const 1.58962301576546568060e-10))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -2.50507477628578072866e-8)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 2.75573136213857245213e-6)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.98412698295895385996e-4)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 8.33333333332211858878e-3)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.66666666666666307295e-1)))
+    ;; z + z * zz * P(zz)
+    (f64.add (local.get $z) (f64.mul (f64.mul (local.get $z) (local.get $zz)) (local.get $p)))
+  )
+
+  ;; cos(z) for the reduced argument z in [-pi/4, pi/4] (Cephes coscof series).
+  (func $__cos_series (param $z f64) (result f64)
+    (local $zz f64)
+    (local $p f64)
+    (local.set $zz (f64.mul (local.get $z) (local.get $z)))
+    (local.set $p (f64.const -1.13585365213876817300e-11))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 2.08757008419747316778e-9)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -2.75573141792967388112e-7)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 2.48015872888517045348e-5)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.38888888888730564116e-3)))
+    (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 4.16666666666665929218e-2)))
+    ;; 1 - zz/2 + zz*zz * P(zz)
+    (f64.add
+      (f64.sub (f64.const 1) (f64.mul (f64.const 0.5) (local.get $zz)))
+      (f64.mul (f64.mul (local.get $zz) (local.get $zz)) (local.get $p)))
+  )
+
+  ;; cos(x). Reduces x modulo pi/4 (octant-based) using an extended-precision
+  ;; pi/4 split, then evaluates the sin or cos series. ~1-2 ULP for |x| up to a
+  ;; few million; precision degrades for very large arguments. cos(+/-inf) = NaN.
   (func $cos (param $x f64) (result f64)
-    (unreachable)
+    (local $y f64)
+    (local $z f64)
+    (local $sign i32)
+    (local $j i32)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (if (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (then (return (f64.const nan))))
+    (local.set $sign (i32.const 1))
+    (local.set $x (f64.abs (local.get $x))) ;; cos is even
+    (local.set $y (f64.floor (f64.mul (local.get $x) (f64.const 1.27323954473516276487)))) ;; x * 4/pi
+    (local.set $z (f64.floor (call $ldexp (local.get $y) (i32.const -4))))
+    (local.set $j (i32.trunc_f64_s (f64.sub (local.get $y) (call $ldexp (local.get $z) (i32.const 4)))))
+    (if (i32.and (local.get $j) (i32.const 1)) (then
+      (local.set $j (i32.add (local.get $j) (i32.const 1)))
+      (local.set $y (f64.add (local.get $y) (f64.const 1)))
+    ))
+    (local.set $j (i32.and (local.get $j) (i32.const 7)))
+    (if (i32.gt_s (local.get $j) (i32.const 3)) (then
+      (local.set $j (i32.sub (local.get $j) (i32.const 4)))
+      (local.set $sign (i32.sub (i32.const 0) (local.get $sign)))
+    ))
+    (if (i32.gt_s (local.get $j) (i32.const 1)) (then
+      (local.set $sign (i32.sub (i32.const 0) (local.get $sign)))
+    ))
+    ;; z = ((x - y*DP1) - y*DP2) - y*DP3, DP1+DP2+DP3 = pi/4
+    ;; z = (x - y*DP1) - y*DP2, with DP1 + DP2 = pi/4 (two-part for precision)
+    (local.set $z (f64.sub (f64.sub (local.get $x)
+      (f64.mul (local.get $y) (f64.const 0.785398170351982116699)))
+      (f64.mul (local.get $y) (f64.const -6.95453383769972788286e-9))))
+    (if (i32.or (i32.eq (local.get $j) (i32.const 1)) (i32.eq (local.get $j) (i32.const 2)))
+      (then (local.set $y (call $__sin_series (local.get $z))))
+      (else (local.set $y (call $__cos_series (local.get $z)))))
+    (if (i32.lt_s (local.get $sign) (i32.const 0)) (then (local.set $y (f64.neg (local.get $y)))))
+    (local.get $y)
   )
-  
+
+  ;; sin(x). Same reduction as cos with sin's octant/sign handling.
   (func $sin (param $x f64) (result f64)
-    (unreachable)
+    (local $y f64)
+    (local $z f64)
+    (local $sign i32)
+    (local $j i32)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (if (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (then (return (f64.const nan))))
+    (local.set $sign (i32.const 1))
+    (if (f64.lt (local.get $x) (f64.const 0)) (then
+      (local.set $x (f64.neg (local.get $x)))
+      (local.set $sign (i32.const -1))
+    ))
+    (local.set $y (f64.floor (f64.mul (local.get $x) (f64.const 1.27323954473516276487))))
+    (local.set $z (f64.floor (call $ldexp (local.get $y) (i32.const -4))))
+    (local.set $j (i32.trunc_f64_s (f64.sub (local.get $y) (call $ldexp (local.get $z) (i32.const 4)))))
+    (if (i32.and (local.get $j) (i32.const 1)) (then
+      (local.set $j (i32.add (local.get $j) (i32.const 1)))
+      (local.set $y (f64.add (local.get $y) (f64.const 1)))
+    ))
+    (local.set $j (i32.and (local.get $j) (i32.const 7)))
+    (if (i32.gt_s (local.get $j) (i32.const 3)) (then
+      (local.set $j (i32.sub (local.get $j) (i32.const 4)))
+      (local.set $sign (i32.sub (i32.const 0) (local.get $sign)))
+    ))
+    ;; z = (x - y*DP1) - y*DP2, with DP1 + DP2 = pi/4 (two-part for precision)
+    (local.set $z (f64.sub (f64.sub (local.get $x)
+      (f64.mul (local.get $y) (f64.const 0.785398170351982116699)))
+      (f64.mul (local.get $y) (f64.const -6.95453383769972788286e-9))))
+    (if (i32.or (i32.eq (local.get $j) (i32.const 1)) (i32.eq (local.get $j) (i32.const 2)))
+      (then (local.set $y (call $__cos_series (local.get $z))))
+      (else (local.set $y (call $__sin_series (local.get $z)))))
+    (if (i32.lt_s (local.get $sign) (i32.const 0)) (then (local.set $y (f64.neg (local.get $y)))))
+    (local.get $y)
   )
-  
+
+  ;; tan(x), via Cephes' rational approximation on the reduced argument with a
+  ;; cotangent reflection for the odd octants. tan(+/-inf) = NaN.
   (func $tan (param $x f64) (result f64)
-    (unreachable)
+    (local $y f64)
+    (local $z f64)
+    (local $zz f64)
+    (local $p f64)
+    (local $q f64)
+    (local $sign i32)
+    (local $j i32)
+    (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x)))) ;; NaN
+    (if (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (then (return (f64.const nan))))
+    (if (f64.eq (local.get $x) (f64.const 0)) (then (return (local.get $x)))) ;; preserve -0
+    (local.set $sign (i32.const 1))
+    (if (f64.lt (local.get $x) (f64.const 0)) (then
+      (local.set $x (f64.neg (local.get $x)))
+      (local.set $sign (i32.const -1))
+    ))
+    (local.set $y (f64.floor (f64.mul (local.get $x) (f64.const 1.27323954473516276487))))
+    (local.set $z (f64.floor (call $ldexp (local.get $y) (i32.const -4))))
+    (local.set $j (i32.trunc_f64_s (f64.sub (local.get $y) (call $ldexp (local.get $z) (i32.const 4)))))
+    (if (i32.and (local.get $j) (i32.const 1)) (then
+      (local.set $j (i32.add (local.get $j) (i32.const 1)))
+      (local.set $y (f64.add (local.get $y) (f64.const 1)))
+    ))
+    ;; z = (x - y*DP1) - y*DP2, with DP1 + DP2 = pi/4 (two-part for precision)
+    (local.set $z (f64.sub (f64.sub (local.get $x)
+      (f64.mul (local.get $y) (f64.const 0.785398170351982116699)))
+      (f64.mul (local.get $y) (f64.const -6.95453383769972788286e-9))))
+    (local.set $zz (f64.mul (local.get $z) (local.get $z)))
+    (if (f64.gt (local.get $zz) (f64.const 1.0e-14)) (then
+      ;; P(zz): degree 2 (3 coefficients)
+      (local.set $p (f64.const -1.30936939181383777646e4))
+      (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const 1.15351664838587416140e6)))
+      (local.set $p (f64.add (f64.mul (local.get $p) (local.get $zz)) (f64.const -1.79565251976484877988e7)))
+      ;; Q(zz): monic degree 4 (4 trailing coefficients)
+      (local.set $q (f64.add (local.get $zz) (f64.const 1.36812963470692954678e4)))
+      (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const -1.32089234440210967447e6)))
+      (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const 2.50083801823357915839e7)))
+      (local.set $q (f64.add (f64.mul (local.get $q) (local.get $zz)) (f64.const -5.38695755929454629881e7)))
+      ;; y = z + z * (zz * P/Q)
+      (local.set $y (f64.add (local.get $z)
+        (f64.mul (local.get $z) (f64.mul (local.get $zz) (f64.div (local.get $p) (local.get $q))))))
+    ) (else
+      (local.set $y (local.get $z))
+    ))
+    ;; odd octant -> cotangent reflection
+    (if (i32.and (local.get $j) (i32.const 2)) (then
+      (local.set $y (f64.div (f64.const -1) (local.get $y)))
+    ))
+    (if (i32.lt_s (local.get $sign) (i32.const 0)) (then (local.set $y (f64.neg (local.get $y)))))
+    (local.get $y)
   )
   
   (func $cosh (param $x f64) (result f64)
@@ -1477,6 +1626,9 @@
   (export "log" (func $log))
   (export "log10" (func $log10))
   (export "pow" (func $pow))
+  (export "sin" (func $sin))
+  (export "cos" (func $cos))
+  (export "tan" (func $tan))
 
   ;; stdlib.h
   (export "itoa_s" (func $itoa_s))
