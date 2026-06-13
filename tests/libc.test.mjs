@@ -503,6 +503,39 @@ test("pow approximates x^y for non-integer exponents", () => {
   }
 });
 
+test("sin and cos are accurate for moderate arguments", () => {
+  assert.equal(libc.sin(0), 0);
+  assert.equal(libc.cos(0), 1);
+  closeUlp(libc.sin(Math.PI / 6), 0.5, 2, "sin(pi/6)");
+  closeUlp(libc.cos(Math.PI / 3), 0.5, 2, "cos(pi/3)");
+
+  // deterministic grid over [-20, 20]; near a zero crossing the value is tiny
+  // so we check absolute error, and check ULPs only where the value is large.
+  for (let x = -20; x <= 20; x += 0.0137) {
+    for (const [f, ref] of [[libc.sin, Math.sin], [libc.cos, Math.cos]]) {
+      const got = f(x);
+      assert.ok(Math.abs(got - ref(x)) < 1e-13, `${f === libc.sin ? "sin" : "cos"}(${x}) abs`);
+      if (Math.abs(ref(x)) > 0.5) closeUlp(got, ref(x), 8, `f(${x})`);
+    }
+  }
+
+  // specials: sin/cos of +/-inf are NaN
+  assert.ok(Number.isNaN(libc.sin(Infinity)));
+  assert.ok(Number.isNaN(libc.cos(-Infinity)));
+  assert.ok(Number.isNaN(libc.sin(NaN)));
+});
+
+test("tan is accurate away from its poles", () => {
+  closeUlp(libc.tan(Math.PI / 4), Math.tan(Math.PI / 4), 2, "tan(pi/4)");
+  // grid within (-pi/2, pi/2), staying clear of the poles at +/-pi/2
+  for (let x = -1.5; x <= 1.5; x += 0.0017) {
+    closeUlp(libc.tan(x), Math.tan(x), 16, `tan(${x})`);
+  }
+  assert.equal(libc.tan(0), 0);
+  assert.ok(Object.is(libc.tan(-0), -0));
+  assert.ok(Number.isNaN(libc.tan(Infinity)));
+});
+
 test("pow handles the C99 special cases", () => {
   const { value: EDOM } = libc.EDOM;
   const { value: ERANGE } = libc.ERANGE;

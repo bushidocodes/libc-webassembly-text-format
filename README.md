@@ -53,16 +53,18 @@ All functions assume ASCII locale.
 | `log` | Implemented (Cephes rational approx; ~1 ULP) |
 | `log10` | Implemented (`log(x) * log10(e)`; a few ULP) |
 | `pow` | Implemented (exact-ish for integer exponents; `exp(y·log x)` otherwise) |
+| `sin` | Implemented (Cephes reduction; ~1 ULP for moderate \|x\|) |
+| `cos` | Implemented (Cephes reduction; ~1 ULP for moderate \|x\|) |
+| `tan` | Implemented (Cephes rational; ~1 ULP away from poles) |
 | `acos` | Stub |
 | `asin` | Stub |
 | `atan` | Stub |
 | `atan2` | Stub |
-| `cos` | Stub |
 | `cosh` | Stub |
-| `sin` | Stub |
 | `sinh` | Stub |
-| `tan` | Stub |
 | `tanh` | Stub |
+
+The trigonometric functions reduce the argument with a two-part π/4 split, so they are accurate (~1 ULP) for moderate magnitudes but lose precision for very large arguments (roughly one decimal digit per power of ten beyond ~10⁷), since they do not implement full Payne–Hanek reduction.
 
 ### stdlib.h
 
