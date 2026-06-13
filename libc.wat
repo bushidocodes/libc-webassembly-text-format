@@ -435,9 +435,120 @@
   )
 
   ;; long strtol(const char *nptr, char **endptr, int base)
-  ;; Returns (value, endptr) in place of the char** out-param.
+  ;; Returns (value, endptr) in place of the char** out-param. Skips leading
+  ;; whitespace, accepts an optional sign and (for base 0 or 16) a "0x" prefix.
+  ;; base 0 auto-detects: "0x" -> 16, leading "0" -> 8, otherwise 10. On overflow
+  ;; the result is clamped to LONG_MAX / LONG_MIN and $errno is set to ERANGE.
+  ;; When no digits are converted the value is 0 and endptr equals nptr.
+  ;; (Classic BSD algorithm, with C `long` represented as i64.)
   (func $strtol (param $nptr i32) (param $base i32) (result i64 i32)
-    (unreachable)
+    (local $s i32)       ;; scan cursor
+    (local $c i32)       ;; current byte
+    (local $d i32)       ;; current digit value
+    (local $neg i32)
+    (local $any i32)     ;; 0 = nothing yet, 1 = converted, -1 = overflowed
+    (local $acc i64)     ;; unsigned accumulator
+    (local $cutoff i64)
+    (local $cutlim i64)
+    (local $baseI64 i64)
+    (local.set $s (local.get $nptr))
+
+    ;; skip leading whitespace
+    (block $ws_done (loop $ws
+      (br_if $ws_done (i32.eqz (call $isspace (i32.load8_u (local.get $s)))))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $ws)
+    ))
+
+    ;; optional sign
+    (local.set $c (i32.load8_u (local.get $s)))
+    (if (i32.eq (local.get $c) (i32.const 45)) (then ;; '-'
+      (local.set $neg (i32.const 1))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+    ) (else (if (i32.eq (local.get $c) (i32.const 43)) (then ;; '+'
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+    ))))
+
+    ;; optional "0x"/"0X" prefix when base is 0 or 16
+    (if (i32.and
+          (i32.or (i32.eqz (local.get $base)) (i32.eq (local.get $base) (i32.const 16)))
+          (i32.and
+            (i32.eq (i32.load8_u (local.get $s)) (i32.const 48)) ;; '0'
+            (i32.or
+              (i32.eq (i32.load8_u (i32.add (local.get $s) (i32.const 1))) (i32.const 120))  ;; 'x'
+              (i32.eq (i32.load8_u (i32.add (local.get $s) (i32.const 1))) (i32.const 88))    ;; 'X'
+            )
+          )
+        ) (then
+      (local.set $s (i32.add (local.get $s) (i32.const 2)))
+      (local.set $base (i32.const 16))
+    ))
+
+    ;; base 0 auto-detection
+    (if (i32.eqz (local.get $base)) (then
+      (local.set $base (if (result i32) (i32.eq (i32.load8_u (local.get $s)) (i32.const 48))
+        (then (i32.const 8)) (else (i32.const 10))))
+    ))
+
+    ;; cutoff/cutlim: the largest acc (and final digit) that cannot overflow.
+    ;; For a negative result the magnitude limit is (unsigned)LONG_MAX + 1 = 2^63.
+    (local.set $baseI64 (i64.extend_i32_u (local.get $base)))
+    (local.set $cutoff (if (result i64) (local.get $neg)
+      (then (i64.const 0x8000000000000000))
+      (else (i64.const 0x7fffffffffffffff))))
+    (local.set $cutlim (i64.rem_u (local.get $cutoff) (local.get $baseI64)))
+    (local.set $cutoff (i64.div_u (local.get $cutoff) (local.get $baseI64)))
+
+    ;; convert digits
+    (local.set $acc (i64.const 0))
+    (local.set $any (i32.const 0))
+    (block $loop_done (loop $loop
+      (local.set $c (i32.load8_u (local.get $s)))
+      (if (call $isdigit (local.get $c)) (then
+        (local.set $d (i32.sub (local.get $c) (i32.const 48)))
+      ) (else (if (call $isalpha (local.get $c)) (then
+        ;; 'A'..'Z' -> 10.., 'a'..'z' -> 10..  ('A'-10 = 55, 'a'-10 = 87)
+        (local.set $d (i32.sub (local.get $c)
+          (if (result i32) (call $isupper (local.get $c)) (then (i32.const 55)) (else (i32.const 87)))))
+      ) (else
+        (br $loop_done)
+      ))))
+      (br_if $loop_done (i32.ge_s (local.get $d) (local.get $base))) ;; digit not valid for base
+      (if (i32.or
+            (i32.lt_s (local.get $any) (i32.const 0))
+            (i32.or
+              (i64.gt_u (local.get $acc) (local.get $cutoff))
+              (i32.and
+                (i64.eq (local.get $acc) (local.get $cutoff))
+                (i64.gt_u (i64.extend_i32_u (local.get $d)) (local.get $cutlim))
+              )
+            )
+          ) (then
+        (local.set $any (i32.const -1))
+      ) (else
+        (local.set $any (i32.const 1))
+        (local.set $acc (i64.add
+          (i64.mul (local.get $acc) (local.get $baseI64))
+          (i64.extend_i32_u (local.get $d))))
+      ))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $loop)
+    ))
+
+    ;; finalize: clamp on overflow, otherwise apply the sign
+    (if (i32.lt_s (local.get $any) (i32.const 0)) (then
+      (local.set $acc (if (result i64) (local.get $neg)
+        (then (i64.const 0x8000000000000000))   ;; LONG_MIN
+        (else (i64.const 0x7fffffffffffffff))))  ;; LONG_MAX
+      (global.set $errno (global.get $ERANGE))
+    ) (else (if (local.get $neg) (then
+      (local.set $acc (i64.sub (i64.const 0) (local.get $acc)))
+    ))))
+
+    ;; (value, endptr): endptr is the stop position if anything was consumed,
+    ;; otherwise the original nptr.
+    (local.get $acc)
+    (if (result i32) (local.get $any) (then (local.get $s)) (else (local.get $nptr)))
   )
 
   ;; Copies a range of bytes from src to dst
@@ -843,6 +954,12 @@
   ;; library can be consumed from a host runtime (and exercised by tests).
   (export "memory" (memory 0))
 
+  ;; errno and its values, so a host can observe error reporting (e.g. ERANGE
+  ;; from strtol overflow). errno is mutable; EDOM/ERANGE are constants.
+  (export "errno" (global $errno))
+  (export "EDOM" (global $EDOM))
+  (export "ERANGE" (global $ERANGE))
+
   ;; assert.h
   (export "assert" (func $assert))
 
@@ -878,12 +995,12 @@
   (export "atoi" (func $atoi))
   (export "rand" (func $rand))
   (export "srand" (func $srand))
+  (export "strtol" (func $strtol))
   ;; Stubs (correct signature, traps until implemented)
   (export "bsearch" (func $bsearch))
   (export "qsort" (func $qsort))
   (export "atof" (func $atof))
   (export "strtod" (func $strtod))
-  (export "strtol" (func $strtol))
 
   ;; string.h
   (export "memcpy" (func $memcpy))

@@ -194,6 +194,49 @@ test("rand matches the reference LCG and is seedable", () => {
   assert.deepEqual(a, b);
 });
 
+test("strtol parses bases, sign, prefixes and reports endptr", () => {
+  // helper returns [value, consumed-length, errno]
+  const run = (str, base) => {
+    libc.errno.value = 0;
+    const p = putStr(3000, str);
+    const [v, end] = libc.strtol(p, base);
+    return [v, end - p, libc.errno.value];
+  };
+
+  assert.deepEqual(run("123", 10), [123n, 3, 0]);
+  assert.deepEqual(run("  -42", 10), [-42n, 5, 0]);
+  assert.deepEqual(run("+5", 10), [5n, 2, 0]);
+  assert.deepEqual(run("0x1A", 16), [26n, 4, 0]);
+  assert.deepEqual(run("0x1A", 0), [26n, 4, 0]); // base 0 detects hex
+  assert.deepEqual(run("010", 0), [8n, 3, 0]); // base 0 detects octal
+  assert.deepEqual(run("010", 10), [10n, 3, 0]); // decimal ignores leading 0
+  assert.deepEqual(run("777", 8), [511n, 3, 0]);
+  assert.deepEqual(run("zz", 36), [1295n, 2, 0]); // 35*36 + 35
+  assert.deepEqual(run("12abc", 10), [12n, 2, 0]); // stops at first non-digit
+  assert.deepEqual(run("abc", 10), [0n, 0, 0]); // no conversion -> endptr == nptr
+});
+
+test("strtol clamps overflow to LONG_MAX/LONG_MIN and sets ERANGE", () => {
+  const LONG_MAX = 9223372036854775807n;
+  const LONG_MIN = -9223372036854775808n;
+  const ERANGE = libc.ERANGE.value;
+
+  // exact boundaries parse without error
+  libc.errno.value = 0;
+  assert.equal(libc.strtol(putStr(3000, "9223372036854775807"), 10)[0], LONG_MAX);
+  assert.equal(libc.errno.value, 0);
+  assert.equal(libc.strtol(putStr(3000, "-9223372036854775808"), 10)[0], LONG_MIN);
+
+  // beyond the boundaries clamps and sets ERANGE
+  libc.errno.value = 0;
+  assert.equal(libc.strtol(putStr(3000, "99999999999999999999999"), 10)[0], LONG_MAX);
+  assert.equal(libc.errno.value, ERANGE);
+
+  libc.errno.value = 0;
+  assert.equal(libc.strtol(putStr(3000, "-99999999999999999999999"), 10)[0], LONG_MIN);
+  assert.equal(libc.errno.value, ERANGE);
+});
+
 // ---------------------------------------------------------------------------
 // math.h
 // ---------------------------------------------------------------------------
@@ -440,7 +483,6 @@ const STUBS = {
   qsort: [0, 0, 0, 0],
   atof: [0],
   strtod: [0],
-  strtol: [0, 0],
 };
 
 for (const [name, args] of Object.entries(STUBS)) {

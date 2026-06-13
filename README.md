@@ -80,7 +80,7 @@ All functions assume ASCII locale.
 | `rand` | Implemented | C reference LCG; `RAND_MAX` is 32767 |
 | `srand` | Implemented | Seeds `rand` |
 | `strtod` | Stub | |
-| `strtol` | Stub | |
+| `strtol` | Implemented | Base 0/2–36, `0x` prefix, overflow clamps + sets `ERANGE`; returns `(value, endptr)` |
 
 ### string.h
 
@@ -139,7 +139,7 @@ Where C uses output pointer parameters or structs, this library uses WebAssembly
 
 ### Global state
 
-`$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2). `strtok` likewise keeps its scan position in a mutable global (`$strtok_save`), so — exactly like the C standard's `strtok` — it is stateful and not reentrant.
+`$errno` is a mutable global rather than a thread-local, which is sufficient for single-threaded WASM modules. `$EDOM` and `$ERANGE` are constant globals matching their POSIX values (1 and 2). All three are exported (`errno`, `EDOM`, `ERANGE`) so a host can clear `errno` before a call and inspect it afterward — for example, `strtol` sets it to `ERANGE` on overflow. `strtok` likewise keeps its scan position in a mutable global (`$strtok_save`), so — exactly like the C standard's `strtok` — it is stateful and not reentrant.
 
 ### Memory operations
 
