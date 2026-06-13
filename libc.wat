@@ -2,6 +2,16 @@
 
   (memory 1)
 
+  ;; Signature of the comparator passed to $bsearch / $qsort:
+  ;; int compar(const void *a, const void *b)
+  (type $compar_t (func (param i32 i32) (result i32)))
+
+  ;; Function table used to invoke a caller-supplied comparator via
+  ;; call_indirect. A host installs its comparator into the exported
+  ;; "__indirect_function_table" and passes the slot index as the compar
+  ;; argument. One slot exists by default; grow the table for more.
+  (table $indirect 1 funcref)
+
   (global $errno (mut i32) (i32.const 0))
   (global $EDOM i32 (i32.const 1))
   (global $ERANGE i32 (i32.const 2))
@@ -349,16 +359,81 @@
   ;; $ldiv) and pointer out-params map to multi-value returns (as in $div /
   ;; $frexp), so e.g. strtol's `char **endptr` is returned as a second result.
 
+  ;; Swap two regions of `size` bytes at addresses a and b (internal helper).
+  (func $memswap (param $a i32) (param $b i32) (param $size i32)
+    (local $t i32)
+    (block $done (loop $loop
+      (br_if $done (i32.eqz (local.get $size)))
+      (local.set $t (i32.load8_u (local.get $a)))
+      (i32.store8 (local.get $a) (i32.load8_u (local.get $b)))
+      (i32.store8 (local.get $b) (local.get $t))
+      (local.set $a (i32.add (local.get $a) (i32.const 1)))
+      (local.set $b (i32.add (local.get $b) (i32.const 1)))
+      (local.set $size (i32.sub (local.get $size) (i32.const 1)))
+      (br $loop)
+    ))
+  )
+
   ;; void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
   ;;               int (*compar)(const void *, const void *))
+  ;; Binary search over a sorted array. `compar` is an index into the exported
+  ;; function table (see $indirect). Returns a pointer to a matching element or
+  ;; NULL. compar is called as compar(key, element).
   (func $bsearch (param $key i32) (param $base i32) (param $nmemb i32) (param $size i32) (param $compar i32) (result i32)
-    (unreachable)
+    (local $lo i32)
+    (local $hi i32)
+    (local $mid i32)
+    (local $p i32)
+    (local $c i32)
+    (local.set $hi (local.get $nmemb))
+    (block $done (loop $loop
+      (br_if $done (i32.ge_u (local.get $lo) (local.get $hi)))
+      (local.set $mid (i32.div_u (i32.add (local.get $lo) (local.get $hi)) (i32.const 2)))
+      (local.set $p (i32.add (local.get $base) (i32.mul (local.get $mid) (local.get $size))))
+      (local.set $c (call_indirect (type $compar_t) (local.get $key) (local.get $p) (local.get $compar)))
+      (if (i32.lt_s (local.get $c) (i32.const 0)) (then
+        (local.set $hi (local.get $mid))
+      ) (else (if (i32.gt_s (local.get $c) (i32.const 0)) (then
+        (local.set $lo (i32.add (local.get $mid) (i32.const 1)))
+      ) (else
+        (return (local.get $p))
+      ))))
+      (br $loop)
+    ))
+    (i32.const 0)
   )
 
   ;; void qsort(void *base, size_t nmemb, size_t size,
   ;;            int (*compar)(const void *, const void *))
+  ;; Sorts the array in place using `compar` (an index into the exported
+  ;; function table). This is a simple O(n^2) selection sort, chosen for clarity
+  ;; over speed; the C standard does not require any particular algorithm or
+  ;; stability.
   (func $qsort (param $base i32) (param $nmemb i32) (param $size i32) (param $compar i32)
-    (unreachable)
+    (local $i i32)
+    (local $j i32)
+    (local $pi i32)
+    (local $pj i32)
+    (block $outer_done (loop $outer
+      (br_if $outer_done (i32.ge_u (i32.add (local.get $i) (i32.const 1)) (local.get $nmemb)))
+      (local.set $pi (i32.add (local.get $base) (i32.mul (local.get $i) (local.get $size))))
+      (local.set $j (i32.add (local.get $i) (i32.const 1)))
+      (block $inner_done (loop $inner
+        (br_if $inner_done (i32.ge_u (local.get $j) (local.get $nmemb)))
+        (local.set $pj (i32.add (local.get $base) (i32.mul (local.get $j) (local.get $size))))
+        ;; if element j sorts before element i, swap them
+        (if (i32.lt_s
+              (call_indirect (type $compar_t) (local.get $pj) (local.get $pi) (local.get $compar))
+              (i32.const 0)
+            ) (then
+          (call $memswap (local.get $pi) (local.get $pj) (local.get $size))
+        ))
+        (local.set $j (i32.add (local.get $j) (i32.const 1)))
+        (br $inner)
+      ))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $outer)
+    ))
   )
 
   ;; int rand(void)
@@ -1079,6 +1154,10 @@
   ;; library can be consumed from a host runtime (and exercised by tests).
   (export "memory" (memory 0))
 
+  ;; Function table for caller-supplied comparators (bsearch/qsort). A host
+  ;; installs a comparator here and passes its slot index.
+  (export "__indirect_function_table" (table $indirect))
+
   ;; errno and its values, so a host can observe error reporting (e.g. ERANGE
   ;; from strtol overflow). errno is mutable; EDOM/ERANGE are constants.
   (export "errno" (global $errno))
@@ -1123,7 +1202,6 @@
   (export "strtol" (func $strtol))
   (export "strtod" (func $strtod))
   (export "atof" (func $atof))
-  ;; Stubs (correct signature, traps until implemented)
   (export "bsearch" (func $bsearch))
   (export "qsort" (func $qsort))
 
