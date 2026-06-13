@@ -157,5 +157,29 @@ wasm-tools parse libc.wat -o libc.wasm
 wat2wasm libc.wat -o libc.wasm
 ```
 
-Then import the functions you need into your module or host runtime.
+The module exports its linear memory (as `memory`) and every implemented
+function under its C name, so you can import the functions you need into your
+own module or call them directly from a host runtime.
+
+## Testing
+
+Correctness tests live in [`tests/libc.test.mjs`](tests/libc.test.mjs) and run
+against the assembled `libc.wasm` using Node's built-in test runner (no
+dependencies). They cover the implemented `ctype.h`, `stdlib.h`, `math.h`, and
+`string.h` functions, including the multi-value (`div`, `ldiv`, `itoa_s`) and
+memory-based (`memset`, `memcpy`, `memmove`, `memcmp`, `memchr`) ones.
+
+```sh
+# Assemble libc.wasm and run the tests
+npm test
+```
+
+This requires `wat2wasm` (from [wabt](https://github.com/WebAssembly/wabt)) on
+your `PATH` and Node.js 18+.
+
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) assembles `libc.wat` with
+`wat2wasm` and runs the test suite on every push and pull request, catching both
+assembly errors and correctness regressions.
 

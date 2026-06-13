@@ -420,4 +420,49 @@
   (func $strstr)
   (func $strtok)
   (func $strerror)
+
+  ;; Exports
+  ;; The linear memory and every implemented function are exported so the
+  ;; library can be consumed from a host runtime (and exercised by tests).
+  (export "memory" (memory 0))
+
+  ;; assert.h
+  (export "assert" (func $assert))
+
+  ;; ctype.h
+  (export "isalnum" (func $isalnum))
+  (export "isalpha" (func $isalpha))
+  (export "isascii" (func $isascii))
+  (export "isblank" (func $isblank))
+  (export "iscntrl" (func $iscntrl))
+  (export "isdigit" (func $isdigit))
+  (export "isgraph" (func $isgraph))
+  (export "islower" (func $islower))
+  (export "isprint" (func $isprint))
+  (export "ispunct" (func $ispunct))
+  (export "isspace" (func $isspace))
+  (export "isupper" (func $isupper))
+  (export "isxdigit" (func $isxdigit))
+  (export "toupper" (func $toupper))
+  (export "tolower" (func $tolower))
+
+  ;; math.h
+  (export "sqrt" (func $sqrt))
+  (export "ceil" (func $ceil))
+  (export "fabs" (func $fabs))
+  (export "floor" (func $floor))
+
+  ;; stdlib.h
+  (export "itoa_s" (func $itoa_s))
+  (export "abs" (func $abs))
+  (export "labs" (func $labs))
+  (export "div" (func $div))
+  (export "ldiv" (func $ldiv))
+
+  ;; string.h
+  (export "memcpy" (func $memcpy))
+  (export "memmove" (func $memmove))
+  (export "memchr" (func $memchr))
+  (export "memset" (func $memset))
+  (export "memcmp" (func $memcmp))
 )

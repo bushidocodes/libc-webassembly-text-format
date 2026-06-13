@@ -1,0 +1,12 @@
+{
+  "name": "libc-webassembly-text-format",
+  "version": "0.0.0",
+  "description": "A WebAssembly Text Format (WAT) implementation of portions of the C Standard Library.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wat2wasm libc.wat -o libc.wasm",
+    "test": "npm run build && node --test"
+  }
+}
