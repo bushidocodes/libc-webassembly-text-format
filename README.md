@@ -49,15 +49,15 @@ All functions assume ASCII locale.
 | `frexp` | Implemented (bit-level; returns `(exponent, fraction)`) |
 | `ldexp` | Implemented (`scalbn`-style staged scaling) |
 | `modf` | Implemented (returns `(integral, fractional)`) |
+| `exp` | Implemented (Cephes rational approx; ~1 ULP) |
+| `log` | Implemented (Cephes rational approx; ~1 ULP) |
+| `log10` | Implemented (`log(x) * log10(e)`; a few ULP) |
 | `acos` | Stub |
 | `asin` | Stub |
 | `atan` | Stub |
 | `atan2` | Stub |
 | `cos` | Stub |
 | `cosh` | Stub |
-| `exp` | Stub |
-| `log` | Stub |
-| `log10` | Stub |
 | `pow` | Stub |
 | `sin` | Stub |
 | `sinh` | Stub |

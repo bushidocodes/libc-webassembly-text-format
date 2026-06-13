@@ -426,6 +426,58 @@ test("toascii masks to 7 bits", () => {
   assert.equal(libc.toascii(0xff), 0x7f);
 });
 
+// distance in representable doubles (ULPs) between two finite values
+const ulps = (a, b) => {
+  if (Object.is(a, b)) return 0;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
+  const buf = new DataView(new ArrayBuffer(8));
+  buf.setFloat64(0, a);
+  const ai = buf.getBigInt64(0);
+  buf.setFloat64(0, b);
+  const bi = buf.getBigInt64(0);
+  const d = ai > bi ? ai - bi : bi - ai;
+  return Number(d);
+};
+const closeUlp = (got, exp, max, msg) =>
+  assert.ok(ulps(got, exp) <= max, `${msg}: ${got} vs ${exp} (${ulps(got, exp)} ulp)`);
+
+test("exp approximates e^x to within a few ULP", () => {
+  for (const x of [0, 1, -1, 0.5, -0.5, 2.5, -10, 10, 100, -100, 0.0001]) {
+    closeUlp(libc.exp(x), Math.exp(x), 2, `exp(${x})`);
+  }
+  // specials
+  assert.equal(libc.exp(0), 1);
+  assert.equal(libc.exp(Infinity), Infinity);
+  assert.equal(libc.exp(-Infinity), 0);
+  assert.ok(Number.isNaN(libc.exp(NaN)));
+  // overflow -> inf + ERANGE
+  libc.errno.value = 0;
+  assert.equal(libc.exp(710), Infinity);
+  assert.equal(libc.errno.value, libc.ERANGE.value);
+});
+
+test("log approximates ln(x) to within a few ULP", () => {
+  for (const x of [1, Math.E, 0.5, 2, 10, 1e9, 1e-9, 123.456, 0.0001]) {
+    closeUlp(libc.log(x), Math.log(x), 2, `log(${x})`);
+  }
+  assert.equal(libc.log(1), 0);
+  assert.equal(libc.log(Infinity), Infinity);
+  assert.ok(Number.isNaN(libc.log(NaN)));
+  // log(0) -> -inf + ERANGE; log(negative) -> NaN + EDOM
+  libc.errno.value = 0;
+  assert.equal(libc.log(0), -Infinity);
+  assert.equal(libc.errno.value, libc.ERANGE.value);
+  libc.errno.value = 0;
+  assert.ok(Number.isNaN(libc.log(-1)));
+  assert.equal(libc.errno.value, libc.EDOM.value);
+});
+
+test("log10 approximates log base 10 to within a few ULP", () => {
+  for (const x of [1, 10, 100, 1000, 0.1, 2, 1e9, 1e-9]) {
+    closeUlp(libc.log10(x), Math.log10(x), 2, `log10(${x})`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // string.h
 // ---------------------------------------------------------------------------
